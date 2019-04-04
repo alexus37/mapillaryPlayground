@@ -68,12 +68,13 @@
         /*
           TODO:
             - disable navigation
-            -
+            - set roation on threejs object
 
         */
         const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
         const MAPILLARY_URL = 'https://a.mapillary.com/v3/images';
         const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
+        const ELEVATION = 401; // in meter at the office
 
         var logo = document.createElement("img");
         var mapillaryContainer = document.createElement('div');
@@ -88,8 +89,15 @@
 
           mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
           mly.on(Mapillary.Viewer.nodechanged, function (node) {
-            issExternalRenderer.mjsPosition = [node.latLon.lon, node.latLon.lat, 405];
-            view.goTo([node.latLon.lon, node.latLon.lat]);
+            issExternalRenderer.mjsPosition = [node.latLon.lon, node.latLon.lat, ELEVATION];
+            issExternalRenderer.mjsRotation = node.computedCA * (Math.PI / 180);
+            console.log(issExternalRenderer.iss.rotation);
+            view.goTo({
+              center: [node.latLon.lon, node.latLon.lat],
+              heading: node.computedCA,
+              tilt: view.camera.tilt,
+              zoom: view.camera.zoom,
+            });
           });
 
           let response = await fetch('studyAreaOffice.json')
@@ -239,6 +247,7 @@
           positionHistory: [], // all ISS positions received so far
 
           mjsPosition : [0, 0, 0],
+          mjsRotation : 0,
 
           markerMaterial: null, // material for the markers left by the ISS
           markerGeometry: null, // geometry for the markers left by the ISS
@@ -306,7 +315,7 @@
             loader.load(
               issMeshUrl,
               function(object3d) {
-                console.log("ISS mesh loaded.");
+                console.log("Mesh loaded.");
                 this.iss = object3d;
 
                 // apply ISS material to all nodes in the geometry
@@ -317,6 +326,16 @@
                     }
                   }.bind(this)
                 );
+
+                this.iss.rotateX(Math.PI / 2);
+                this.iss.rotateZ(-Math.PI / 4);
+                /*
+                this.iss.rotation.set(
+                  Math.PI / 2,
+                  0,
+                  -Math.PI / 4
+                );
+                */
 
                 // set the specified scale for the model
                 this.iss.scale.set(this.issScale, this.issScale, this.issScale);
@@ -364,21 +383,23 @@
                 0,
                 1
               );
-              this.iss.position.set(renderPos[0], renderPos[1], renderPos[2]);
 
-              // for the region, we position a torus slightly under ground
-              // the torus also needs to be rotated to lie flat on the ground
-              posEst = [posEst[0], posEst[1], -450 * 1000];
-
+              /*
               var transform = new THREE.Matrix4();
-              transform.fromArray(
-                externalRenderers.renderCoordinateTransformAt(
-                  view,
-                  posEst,
-                  SpatialReference.WGS84,
-                  new Array(16)
-                )
+              var transformation = new Array(16);
+
+              externalRenderers.renderCoordinateTransformAt(
+                view,
+                posEst,
+                SpatialReference.WGS84,
+                transformation
               );
+              transform.fromArray(transformation);
+              */
+              this.iss.position.set(renderPos[0], renderPos[1], renderPos[2]);
+              this.iss.rotateY(Math.PI / 1000);
+              //this.iss.applyMatrix(transform);
+
             }
 
             // update lighting
