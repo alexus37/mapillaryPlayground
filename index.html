@@ -52,6 +52,7 @@
         "esri/Graphic",
         "esri/layers/GeoJSONLayer",
         'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
+        "https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.3.2/gl-matrix-min.js",
       ], function(
         Map,
         SceneView,
@@ -63,7 +64,8 @@
         GraphicsLayer,
         Graphic,
         GeoJSONLayer,
-        Mapillary
+        Mapillary,
+        glMatrix,
       ) {
         /*
           TODO:
@@ -75,6 +77,7 @@
         const MAPILLARY_URL = 'https://a.mapillary.com/v3/images';
         const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
         const ELEVATION = 401; // in meter at the office
+        let mapExtent = null;
 
         var logo = document.createElement("img");
         var mapillaryContainer = document.createElement('div');
@@ -89,9 +92,10 @@
 
           mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
           mly.on(Mapillary.Viewer.nodechanged, function (node) {
-            issExternalRenderer.mjsPosition = [node.latLon.lon, node.latLon.lat, ELEVATION];
-            issExternalRenderer.mjsRotation = node.computedCA * (Math.PI / 180);
-            console.log(issExternalRenderer.iss.rotation);
+            meshExternalRenderer.mjsPosition = [node.latLon.lon, node.latLon.lat, ELEVATION];
+            // TODO: fix this
+            meshExternalRenderer.mjsRotation = node.computedCA * (Math.PI / 180) - Math.PI / 2;
+            console.log(meshExternalRenderer.mesh.rotation);
             view.goTo({
               center: [node.latLon.lon, node.latLon.lat],
               heading: node.computedCA,
@@ -124,6 +128,9 @@
           const geojsonLayer = new GeoJSONLayer({
             url: url,
           });
+          await geojsonLayer.load();
+
+          mapExtent = geojsonLayer.fullExtent;
 
           view.on("click", function(event){
             view.hitTest(event).then(function(response) {
@@ -150,35 +157,23 @@
           });
 
           map.add(geojsonLayer);
+
+          // register the external renderer
+          externalRenderers.add(view, meshExternalRenderer);
         };
 
-
-        // Proxy the requests to avoid CORS issues
-        //////////////////////////////////////////////////////////////////////////////////////
-
-        urlUtils.addProxyRule({
-          urlPrefix: "https://open-notify-api.herokuapp.com",
-          proxyUrl: "https://developers.arcgis.com/proxy/"
-        });
-
-
-        // Create a map
-        //////////////////////////////////////////////////////////////////////////////////////
         var map = new Map({
           basemap: "gray",
           ground: "world-elevation"
         });
 
-
-        /*********************
-         * Add graphics layer
-         *********************/
+        map.ground.navigationConstraint = {
+          type: "none"
+        };
 
         var graphicsLayer = new GraphicsLayer();
         map.add(graphicsLayer);
 
-        // Create a SceneView
-        //////////////////////////////////////////////////////////////////////////////////////
         var view = new SceneView({
           container: "viewDiv",
           map: map,
@@ -209,20 +204,8 @@
         });
         */
 
-        /***************************
-         * Add a 3D polygon graphic
-         ***************************/
-
         // make request to map
         loadData();
-
-
-
-
-
-
-
-
 
         // Disable lighting based on the current camera position.
         // We want to display the lighting according to the current time of day.
@@ -231,7 +214,7 @@
         // Create our custom external renderer
         //////////////////////////////////////////////////////////////////////////////////////
 
-        var issExternalRenderer = {
+        var meshExternalRenderer = {
           renderer: null, // three.js renderer
           camera: null, // three.js camera
           scene: null, // three.js scene
@@ -239,29 +222,81 @@
           ambient: null, // three.js ambient light source
           sun: null, // three.js sun light source
 
-          iss: null, // ISS model
-          issScale: 0.01, // scale for the iss model
-          issMaterial: new THREE.MeshLambertMaterial({ color: 0xe03110 }), // material for the ISS model
+          mesh: null, // mesh model
+          meshScale: 0.01, // scale for the mesh model
+          meshMaterial: new THREE.MeshLambertMaterial({ color: 0xe03110 }), // material for the mesh model
 
-          cameraPositionInitialized: true, // we focus the view on the ISS once we receive our first data point
-          positionHistory: [], // all ISS positions received so far
+          cameraPositionInitialized: true, // we focus the view on the mesh once we receive our first data point
+          positionHistory: [], // all mesh positions received so far
 
-          mjsPosition : [0, 0, 0],
+          mjsPosition : [8.5099, 47.389, 500],
           mjsRotation : 0,
 
-          markerMaterial: null, // material for the markers left by the ISS
-          markerGeometry: null, // geometry for the markers left by the ISS
+          // Local origin
+          localOrigin: null,
+          localOriginRender: null,
+          originTransform: new THREE.Matrix4(),
+          originTransformInverse: new THREE.Matrix4(),
+
+
+          markerMaterial: null, // material for the markers left by the mesh
+          markerGeometry: null, // geometry for the markers left by the mesh
+
+          lastPosition: null,
+          lastTime: null,
+          localOriginSR: null,
 
           /**
            * Setup function, called once by the ArcGIS JS API.
            */
           setup: function(context) {
+            this.initializeRenderer(context);
+            this.initializeCamera(context);
+            this.initializeScene(context);
+
+            // load the mesh
+            var loader = new THREE.OBJLoader(THREE.DefaultLoadingManager);
+            loader.load(
+              "deer.obj",
+              function(object3d) {
+                console.log("Mesh loaded.");
+                this.mesh = object3d;
+
+                // apply mesh material to all nodes in the geometry
+                this.mesh.traverse(
+                  function(child) {
+                    if (child instanceof THREE.Mesh) {
+                      child.material = this.meshMaterial;
+                    }
+                  }.bind(this)
+                  );
+
+                  this.mesh.rotateX(Math.PI / 2);
+                  this.mesh.rotateZ(-Math.PI / 4);
+
+
+                this.initData(context);
+
+                // add the model
+                this.scene.add(this.mesh);
+              }.bind(this),
+              undefined,
+              function(error) {
+                console.error("Error loading mesh. ", error);
+              }
+              );
+
+            // cleanup after ourselfs
+            context.resetWebGLState();
+          },
+          initializeRenderer: function(context) {
             // initialize the three.js renderer
             //////////////////////////////////////////////////////////////////////////////////////
             this.renderer = new THREE.WebGLRenderer({
               context: context.gl,
               premultipliedAlpha: false
             });
+
             this.renderer.setPixelRatio(window.devicePixelRatio);
             this.renderer.setViewport(0, 0, view.width, view.height);
 
@@ -282,18 +317,22 @@
                 context.bindRenderTarget();
               }
             };
+          },
 
+          initializeCamera: function(context) {
+            const camera = context.camera;
+            this.camera = new THREE.PerspectiveCamera(camera.fovY, camera.aspect, camera.near, camera.far);
+          },
+
+          initializeScene: function(context) {
             // setup the three.js scene
             ///////////////////////////////////////////////////////////////////////////////////////
-
             this.scene = new THREE.Scene();
-
-            // setup the camera
-            this.camera = new THREE.PerspectiveCamera();
 
             // setup scene lighting
             this.ambient = new THREE.AmbientLight(0xffffff, 0.5);
             this.scene.add(this.ambient);
+
             this.sun = new THREE.DirectionalLight(0xffffff, 0.5);
             this.scene.add(this.sun);
 
@@ -308,100 +347,21 @@
               transparent: true,
               opacity: 0.75
             });
-
-            // load ISS mesh
-            var issMeshUrl = "deer.obj";
-            var loader = new THREE.OBJLoader(THREE.DefaultLoadingManager);
-            loader.load(
-              issMeshUrl,
-              function(object3d) {
-                console.log("Mesh loaded.");
-                this.iss = object3d;
-
-                // apply ISS material to all nodes in the geometry
-                this.iss.traverse(
-                  function(child) {
-                    if (child instanceof THREE.Mesh) {
-                      child.material = this.issMaterial;
-                    }
-                  }.bind(this)
-                );
-
-                this.iss.rotateX(Math.PI / 2);
-                this.iss.rotateZ(-Math.PI / 4);
-                /*
-                this.iss.rotation.set(
-                  Math.PI / 2,
-                  0,
-                  -Math.PI / 4
-                );
-                */
-
-                // set the specified scale for the model
-                this.iss.scale.set(this.issScale, this.issScale, this.issScale);
-
-                // add the model
-                this.scene.add(this.iss);
-              }.bind(this),
-              undefined,
-              function(error) {
-                console.error("Error loading ISS mesh. ", error);
-              }
-            );
-
-
-            // cleanup after ourselfs
-            context.resetWebGLState();
           },
 
-          render: function(context) {
-            // update camera parameters
-            ///////////////////////////////////////////////////////////////////////////////////
-            var cam = context.camera;
+          updateCamera: function(context) {
+            const camera = context.camera;
+            const origin = new THREE.Vector3();
+            origin.setFromMatrixPosition(this.originTransform);
 
-            this.camera.position.set(cam.eye[0], cam.eye[1], cam.eye[2]);
-            this.camera.up.set(cam.up[0], cam.up[1], cam.up[2]);
-            this.camera.lookAt(
-              new THREE.Vector3(cam.center[0], cam.center[1], cam.center[2])
-            );
+            this.camera.position.set(camera.eye[0] - origin.x, camera.eye[1] - origin.y, camera.eye[2] - origin.z);
+            this.camera.up.set(camera.up[0], camera.up[1], camera.up[2]);
+            this.camera.lookAt(new THREE.Vector3(camera.center[0] - origin.x, camera.center[1] - origin.y, camera.center[2] - origin.z));
 
-            // Projection matrix can be copied directly
-            this.camera.projectionMatrix.fromArray(cam.projectionMatrix);
+            this.camera.projectionMatrix.fromArray(camera.projectionMatrix);
+          },
 
-            // update ISS and region position
-            ///////////////////////////////////////////////////////////////////////////////////
-            if (this.iss) {
-              var posEst = this.mjsPosition; // this.computeISSPosition();
-
-              var renderPos = [0, 0, 0];
-              externalRenderers.toRenderCoordinates(
-                view,
-                posEst,
-                0,
-                SpatialReference.WGS84,
-                renderPos,
-                0,
-                1
-              );
-
-              /*
-              var transform = new THREE.Matrix4();
-              var transformation = new Array(16);
-
-              externalRenderers.renderCoordinateTransformAt(
-                view,
-                posEst,
-                SpatialReference.WGS84,
-                transformation
-              );
-              transform.fromArray(transformation);
-              */
-              this.iss.position.set(renderPos[0], renderPos[1], renderPos[2]);
-              this.iss.rotateY(Math.PI / 1000);
-              //this.iss.applyMatrix(transform);
-
-            }
-
+          updateLights: function(context) {
             // update lighting
             /////////////////////////////////////////////////////////////////////////////////////////////////////
             view.environment.lighting.date = Date.now();
@@ -425,25 +385,133 @@
               l.ambient.color[1],
               l.ambient.color[2]
             );
+          },
+
+          initData: function(context) {
+            // Choose a local origin.
+            // In our case, we simply use the map center.
+            // For global scenes, you'll need multiple local origins.
+            this.localOriginSR = mapExtent.center.spatialReference;
+            this.localOrigin = [mapExtent.center.x, mapExtent.center.y, ELEVATION];
+
+            // Calculate local origin in render coordinates with 32bit precision
+            this.localOriginRender = externalRenderers.toRenderCoordinates(
+              view,
+              this.localOrigin,
+              0,
+              this.localOriginSR,
+              new Float32Array(3),
+              0,
+              1
+            );
+
+            this.originTransform.fromArray(
+              externalRenderers.renderCoordinateTransformAt(
+                view,
+                this.localOrigin,
+                this.localOriginSR,
+                null,
+              )
+            );
+
+            this.originTransformInverse.getInverse(this.originTransform);
+
+          },
+
+          render: function(context) {
+            // update mesh and region position
+            ///////////////////////////////////////////////////////////////////////////////////
+            if (this.mesh) {
+              this.updateCamera(context);
+              this.updateLights(context);
+
+              var posEst = this.mjsPosition;
+
+              this.originTransform.fromArray(
+                externalRenderers.renderCoordinateTransformAt(
+                  view,
+                  posEst,
+                  this.localOriginSR,
+                  null,
+                )
+              );
+
+            this.originTransformInverse.getInverse(this.originTransform);
+
+              const location = externalRenderers.toRenderCoordinates(
+                view,
+                posEst,
+                0,
+                mapExtent.center.spatialReference,
+                [0, 0, 0],
+                0,
+                1
+              );
+
+              const localLocation = new THREE.Vector3(location[0], location[1], location[2]);
+              localLocation.applyMatrix4(this.originTransformInverse);
+
+              const angle = Math.atan2(localLocation.y, localLocation.x);
+
+              const transform = this.originTransform.clone();
+              const rotation = new THREE.Matrix4();
+
+              rotation.makeRotationZ(this.mjsRotation);
+              transform.multiply(rotation);
+
+              rotation.makeRotationX(Math.PI / 2);
+              transform.multiply(rotation);
+              //rotation.makeRotationY(Math.PI);
+
+
+              transform.decompose(this.mesh.position, this.mesh.quaternion, this.mesh.scale);
+
+              // set the specified scale for the model
+              this.mesh.scale.set(this.meshScale, this.meshScale, this.meshScale);
+
+              // Use location as a local origin when rendering
+              this.mesh.position.set(0, 0, 0);
+
+              const inverseTransform = new THREE.Matrix4();
+              inverseTransform.getInverse(transform);
+
+              const localVector = new THREE.Vector3(location[0], location[1], location[2]);
+              localVector.applyMatrix4(inverseTransform);
+
+
+
+              /*
+              var renderPos = [0, 0, 0];
+              externalRenderers.toRenderCoordinates(
+                view,
+                posEst,
+                0,
+                SpatialReference.WGS84,
+                renderPos,
+                0,
+                1
+              );
+
+              this.mesh.position.set(renderPos[0], renderPos[1], renderPos[2]);
+              this.mesh.rotateY(Math.PI / 1000);
+              console.log(this.mesh.rotation.y);
+              */
+            }
+
+
 
             // draw the scene
             /////////////////////////////////////////////////////////////////////////////////////////////////////
             this.renderer.resetGLState();
             this.renderer.render(this.scene, this.camera);
 
-            // as we want to smoothly animate the ISS movement, immediately request a re-render
+            // as we want to smoothly animate the mesh movement, immediately request a re-render
             externalRenderers.requestRender(view);
 
             // cleanup
             context.resetWebGLState();
-          },
-
-          lastPosition: null,
-          lastTime: null,
+          }
         };
-
-        // register the external renderer
-        externalRenderers.add(view, issExternalRenderer);
       });
     </script>
   </head>
