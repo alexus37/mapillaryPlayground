@@ -1,85 +1,81 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="initial-scale=1,maximum-scale=1,user-scalable=no"
-    />
-    <title>Mapillary with SceneView</title>
 
-    <link
-      rel="stylesheet"
-      href="https://js.arcgis.com/4.11/esri/themes/light/main.css"
-    />
-    <script src="https://js.arcgis.com/4.11/"></script>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Mapillary with SceneView</title>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r79/three.js"></script>
-    <script src="https://developers.arcgis.com/javascript/latest/sample-code/scene-external-renderer-threejs/live/./OBJLoader.js"></script>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.11/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.11/"></script>
 
-    <link href='https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.css' rel='stylesheet' />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r79/three.js"></script>
+  <script
+    src="https://developers.arcgis.com/javascript/latest/sample-code/scene-external-renderer-threejs/live/./OBJLoader.js"></script>
+
+  <link href='https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.css' rel='stylesheet' />
 
 
 
-    <style>
-      html,
-      body,
-      #viewDiv {
-        padding: 0;
-        margin: 0;
-        height: 100%;
-        width: 100%;
-      }
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
 
-      #mly {
-        width: 400px;
-        height: 500px;
-      }
+    #mly {
+      width: 400px;
+      height: 500px;
+    }
+  </style>
 
-    </style>
-
-    <!-- Our application -->
-    <script>
-      require([
-        "esri/Map",
-        "esri/views/SceneView",
-        "esri/views/3d/externalRenderers",
-        "esri/geometry/SpatialReference",
-        "esri/request",
-        "esri/core/urlUtils",
-        "esri/geometry/Polygon",
-        "esri/layers/GraphicsLayer",
-        "esri/Graphic",
-        "esri/layers/GeoJSONLayer",
-        'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
-        "https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.3.2/gl-matrix-min.js",
-      ], function(
-        Map,
-        SceneView,
-        externalRenderers,
-        SpatialReference,
-        esriRequest,
-        urlUtils,
-        Polygon,
-        GraphicsLayer,
-        Graphic,
-        GeoJSONLayer,
-        Mapillary,
-        glMatrix,
+  <!-- Our application -->
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/views/3d/externalRenderers",
+      "esri/geometry/SpatialReference",
+      "esri/request",
+      "esri/core/urlUtils",
+      "esri/geometry/Polygon",
+      "esri/layers/GraphicsLayer",
+      "esri/Graphic",
+      "esri/layers/GeoJSONLayer",
+      'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
+      "https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.3.2/gl-matrix-min.js",
+    ], function (
+      Map,
+      SceneView,
+      externalRenderers,
+      SpatialReference,
+      esriRequest,
+      urlUtils,
+      Polygon,
+      GraphicsLayer,
+      Graphic,
+      GeoJSONLayer,
+      Mapillary,
+      glMatrix,
       ) {
         const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
         const MAPILLARY_URL = 'https://a.mapillary.com/v3/images';
         const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
         const ELEVATION = 401; // in meter at the office
         let mapExtent = null;
+
         // create the containers
         var info = document.createElement("div");
-        var newContent = document.createTextNode("Mapillary Sceneview playground. Click on marker to navigate, afterwards you can use streetview navigation."); 
-        
-        // add the text node to the newly created div
-        info.appendChild(newContent);  
+        var newContent = document.createTextNode("Mapillary Sceneview playground. Click on marker to navigate, afterwards you can use streetview navigation.");
 
-        
+        // add the text node to the newly created div
+        info.appendChild(newContent);
+
+        // create mapillary container
         var mapillaryContainer = document.createElement('div');
         mapillaryContainer.setAttribute("id", "mly");
         var mly = null;
@@ -97,13 +93,14 @@
             meshExternalRenderer.mjsRotation = (-(node.computedCA * (Math.PI / 180))) + (Math.PI / 2);
 
             var time = Date.now() / 1000;
-
+            // update thjree.js state
             meshExternalRenderer.positionHistory.push({
               pos: [node.latLon.lon, node.latLon.lat, ELEVATION],
               time: time,
               roation: (-(node.computedCA * (Math.PI / 180))) + (Math.PI / 2)
             });
 
+            // update sceneview
             view.goTo({
               center: [node.latLon.lon, node.latLon.lat],
               heading: node.computedCA,
@@ -112,6 +109,7 @@
             });
           });
 
+          // add the study area
           let response = await fetch('studyAreaOffice.json')
           const data = await response.json();
           var polygon = new Polygon({ rings: data.features[0].geometry.coordinates[0] });
@@ -130,6 +128,7 @@
 
           graphicsLayer.add(polygonGraphic);
 
+          // query data from mapillary api and add to map
           const { xmin, ymin, xmax, ymax } = polygon.extent;
           const url = `${MAPILLARY_URL}?bbox=${xmin},${ymin},${xmax},${ymax}&client_id=${CLIENT_ID}`;
 
@@ -140,22 +139,21 @@
 
           mapExtent = geojsonLayer.fullExtent;
 
-          view.on("click", function(event){
-            view.hitTest(event).then(function(response) {
-              // check if a feature is returned from the hurricanesLayer
+          view.on("click", function (event) {
+            view.hitTest(event).then(function (response) {
+              // check if a feature is returned from the layer
               // do something with the result graphic
-              const graphic = response.results.filter(function(result) {
+              const graphic = response.results.filter(function (result) {
                 return result.graphic.layer === geojsonLayer;
               })[0].graphic;
-
 
               const queryParams = geojsonLayer.createQuery();
               queryParams.objectIds = [graphic.attributes.OBJECTID]
 
               // query the layer with the modified params object
-              geojsonLayer.queryFeatures(queryParams).then(function(results){
+              geojsonLayer.queryFeatures(queryParams).then(function (results) {
                 // prints the array of result graphics to the console
-                if(results.features.length > 0) {
+                if (results.features.length > 0) {
                   const { key } = results.features[0].attributes;
                   // logo.src = `${IMAGE_URL}/${key}/thumb-320.jpg`;
                   mly.moveToKey(key);
@@ -235,30 +233,22 @@
           meshScale: 0.01, // scale for the mesh model
           meshMaterial: new THREE.MeshLambertMaterial({ color: 0xe03110 }), // material for the mesh model
 
-          cameraPositionInitialized: true, // we focus the view on the mesh once we receive our first data point
           positionHistory: [], // all mesh positions received so far
 
-          mjsPosition : [8.5099, 47.389, 500],
-          mjsRotation : 0,
+          mjsPosition: [8.5099, 47.389, 500],
+          mjsRotation: 0,
 
-          // Local origin
-          localOrigin: null,
-          localOriginRender: null,
           originTransform: new THREE.Matrix4(),
           originTransformInverse: new THREE.Matrix4(),
-
-
-          markerMaterial: null, // material for the markers left by the mesh
-          markerGeometry: null, // geometry for the markers left by the mesh
+          scaleVec: new THREE.Vector3(),  // not used (placeholder to not recreate every render call)
 
           lastPosition: null,
           lastTime: null,
-          localOriginSR: null,
 
           /**
            * Setup function, called once by the ArcGIS JS API.
            */
-          setup: function(context) {
+          setup: function (context) {
             this.initializeRenderer(context);
             this.initializeCamera(context);
             this.initializeScene(context);
@@ -267,39 +257,36 @@
             var loader = new THREE.OBJLoader(THREE.DefaultLoadingManager);
             loader.load(
               "deer.obj",
-              function(object3d) {
+              function (object3d) {
                 console.log("Mesh loaded.");
                 this.mesh = object3d;
 
                 // apply mesh material to all nodes in the geometry
                 this.mesh.traverse(
-                  function(child) {
+                  function (child) {
                     if (child instanceof THREE.Mesh) {
                       child.material = this.meshMaterial;
                     }
                   }.bind(this)
-                  );
+                );
 
-                  this.mesh.rotateX(Math.PI / 2);
-                  this.mesh.rotateZ(-Math.PI / 4);
-
-
-                this.initData(context);
+                // set the specified scale for the model
+                this.mesh.scale.set(this.meshScale, this.meshScale, this.meshScale);
 
                 // add the model
                 this.scene.add(this.mesh);
               }.bind(this),
               undefined,
-              function(error) {
+              function (error) {
                 console.error("Error loading mesh. ", error);
               }
-              );
+            );
 
             // cleanup after ourselfs
             context.resetWebGLState();
           },
 
-          initializeRenderer: function(context) {
+          initializeRenderer: function (context) {
             // initialize the three.js renderer
             //////////////////////////////////////////////////////////////////////////////////////
             this.renderer = new THREE.WebGLRenderer({
@@ -321,7 +308,7 @@
             var originalSetRenderTarget = this.renderer.setRenderTarget.bind(
               this.renderer
             );
-            this.renderer.setRenderTarget = function(target) {
+            this.renderer.setRenderTarget = function (target) {
               originalSetRenderTarget(target);
               if (target == null) {
                 context.bindRenderTarget();
@@ -329,12 +316,12 @@
             };
           },
 
-          initializeCamera: function(context) {
+          initializeCamera: function (context) {
             const camera = context.camera;
             this.camera = new THREE.PerspectiveCamera(camera.fovY, camera.aspect, camera.near, camera.far);
           },
 
-          initializeScene: function(context) {
+          initializeScene: function (context) {
             // setup the three.js scene
             ///////////////////////////////////////////////////////////////////////////////////////
             this.scene = new THREE.Scene();
@@ -345,21 +332,9 @@
 
             this.sun = new THREE.DirectionalLight(0xffffff, 0.5);
             this.scene.add(this.sun);
-
-            // setup markers
-            this.markerGeometry = new THREE.SphereBufferGeometry(
-              12 * 1000,
-              16,
-              16
-            );
-            this.markerMaterial = new THREE.MeshBasicMaterial({
-              color: 0xe03110,
-              transparent: true,
-              opacity: 0.75
-            });
           },
 
-          updateCamera: function(context) {
+          updateCamera: function (context) {
             const camera = context.camera;
             const origin = new THREE.Vector3();
             origin.setFromMatrixPosition(this.originTransform);
@@ -371,7 +346,7 @@
             this.camera.projectionMatrix.fromArray(camera.projectionMatrix);
           },
 
-          computeLastPosition: function() {
+          computeLastPosition: function () {
             if (this.positionHistory.length == 0) {
               return [0, 0, 0];
             }
@@ -396,7 +371,7 @@
             var dt1 = now - entry1.time;
 
             // animate for one sec
-            if(dt1 > 1) {
+            if (dt1 > 1) {
               this.lastTime = now;
               return this.lastPosition;
             }
@@ -404,7 +379,6 @@
             // compute direction
             var lonDir = entry1.pos[0] - this.lastPosition[0];
             var latDir = entry1.pos[1] - this.lastPosition[1];
-
 
             // compute the delta of current and newly estimated position
             var dPos = [
@@ -425,7 +399,7 @@
             return newPos;
           },
 
-          updateLights: function(context) {
+          updateLights: function (context) {
             // update lighting
             /////////////////////////////////////////////////////////////////////////////////////////////////////
             view.environment.lighting.date = Date.now();
@@ -451,57 +425,30 @@
             );
           },
 
-          initData: function(context) {
-            // Choose a local origin.
-            // In our case, we simply use the map center.
-            // For global scenes, you'll need multiple local origins.
-            this.localOriginSR = mapExtent.center.spatialReference;
-            this.localOrigin = [mapExtent.center.x, mapExtent.center.y, ELEVATION];
 
-            // Calculate local origin in render coordinates with 32bit precision
-            this.localOriginRender = externalRenderers.toRenderCoordinates(
-              view,
-              this.localOrigin,
-              0,
-              this.localOriginSR,
-              new Float32Array(3),
-              0,
-              1
-            );
-
-            this.originTransform.fromArray(
-              externalRenderers.renderCoordinateTransformAt(
-                view,
-                this.localOrigin,
-                this.localOriginSR,
-                null,
-              )
-            );
-
-            this.originTransformInverse.getInverse(this.originTransform);
-
-          },
-
-          render: function(context) {
+          render: function (context) {
             // update mesh and region position
             ///////////////////////////////////////////////////////////////////////////////////
             if (this.mesh) {
               this.updateCamera(context);
               this.updateLights(context);
 
+              // compute the current mesh position in [lat, lng, evel]
               var posEst = this.computeLastPosition();
 
+              // compute matrix to position
               this.originTransform.fromArray(
                 externalRenderers.renderCoordinateTransformAt(
                   view,
                   posEst,
-                  this.localOriginSR,
+                  mapExtent.center.spatialReference,
                   null,
                 )
               );
+              // compute the inverse
+              this.originTransformInverse.getInverse(this.originTransform);
 
-            this.originTransformInverse.getInverse(this.originTransform);
-
+              // get render coordiantes for the position
               const location = externalRenderers.toRenderCoordinates(
                 view,
                 posEst,
@@ -512,10 +459,9 @@
                 1
               );
 
+              // transform to three vec, apply roations and decompose into mesh pos and rot
               const localLocation = new THREE.Vector3(location[0], location[1], location[2]);
               localLocation.applyMatrix4(this.originTransformInverse);
-
-              const angle = Math.atan2(localLocation.y, localLocation.x);
 
               const transform = this.originTransform.clone();
               const rotation = new THREE.Matrix4();
@@ -525,22 +471,11 @@
 
               rotation.makeRotationX(Math.PI / 2);
               transform.multiply(rotation);
-              //rotation.makeRotationY(Math.PI);
 
-
-              transform.decompose(this.mesh.position, this.mesh.quaternion, this.mesh.scale);
-
-              // set the specified scale for the model
-              this.mesh.scale.set(this.meshScale, this.meshScale, this.meshScale);
+              transform.decompose(this.mesh.position, this.mesh.quaternion, this.scaleVec);
 
               // Use location as a local origin when rendering
               this.mesh.position.set(0, 0, 0);
-
-              const inverseTransform = new THREE.Matrix4();
-              inverseTransform.getInverse(transform);
-
-              const localVector = new THREE.Vector3(location[0], location[1], location[2]);
-              localVector.applyMatrix4(inverseTransform);
             }
 
             // draw the scene
@@ -556,10 +491,11 @@
           }
         };
       });
-    </script>
-  </head>
+  </script>
+</head>
 
-  <body>
-    <div id="viewDiv"></div>
-  </body>
+<body>
+  <div id="viewDiv"></div>
+</body>
+
 </html>
