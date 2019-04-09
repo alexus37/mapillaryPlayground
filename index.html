@@ -6,7 +6,7 @@
       name="viewport"
       content="initial-scale=1,maximum-scale=1,user-scalable=no"
     />
-    <title>Use three.js from an external renderer - 4.11</title>
+    <title>Mapillary with SceneView</title>
 
     <link
       rel="stylesheet"
@@ -67,35 +67,43 @@
         Mapillary,
         glMatrix,
       ) {
-        /*
-          TODO:
-            - disable navigation
-            - set roation on threejs object
-
-        */
         const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
         const MAPILLARY_URL = 'https://a.mapillary.com/v3/images';
         const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
         const ELEVATION = 401; // in meter at the office
         let mapExtent = null;
+        // create the containers
+        var info = document.createElement("div");
+        var newContent = document.createTextNode("Mapillary Sceneview playground. Click on marker to navigate, afterwards you can use streetview navigation."); 
+        
+        // add the text node to the newly created div
+        info.appendChild(newContent);  
 
-        var logo = document.createElement("img");
+        
         var mapillaryContainer = document.createElement('div');
         mapillaryContainer.setAttribute("id", "mly");
-        logo.src = "https://via.placeholder.com/150";
         var mly = null;
 
         const loadData = async () => {
           // add the image to the view
-          view.ui.add(logo, "bottom-right");
+          view.ui.add(info, "top-right");
           view.ui.add(mapillaryContainer, "bottom-left");
 
           mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
           mly.on(Mapillary.Viewer.nodechanged, function (node) {
             meshExternalRenderer.mjsPosition = [node.latLon.lon, node.latLon.lat, ELEVATION];
-            // TODO: fix this
-            meshExternalRenderer.mjsRotation = node.computedCA * (Math.PI / 180) - Math.PI / 2;
-            console.log(meshExternalRenderer.mesh.rotation);
+            // mapillary degrees, clockwise, zero pointing north
+            // three.js radians, anticlockwise, zero pointing east
+            meshExternalRenderer.mjsRotation = (-(node.computedCA * (Math.PI / 180))) + (Math.PI / 2);
+
+            var time = Date.now() / 1000;
+
+            meshExternalRenderer.positionHistory.push({
+              pos: [node.latLon.lon, node.latLon.lat, ELEVATION],
+              time: time,
+              roation: (-(node.computedCA * (Math.PI / 180))) + (Math.PI / 2)
+            });
+
             view.goTo({
               center: [node.latLon.lon, node.latLon.lat],
               heading: node.computedCA,
@@ -149,7 +157,7 @@
                 // prints the array of result graphics to the console
                 if(results.features.length > 0) {
                   const { key } = results.features[0].attributes;
-                  logo.src = `${IMAGE_URL}/${key}/thumb-320.jpg`;
+                  // logo.src = `${IMAGE_URL}/${key}/thumb-320.jpg`;
                   mly.moveToKey(key);
                 }
               });
@@ -190,6 +198,7 @@
           }
         });
         /*
+        // CAN added or removed depends if the navigation should be fixed
         view.on("drag", function(event) {
           // prevents panning with the mouse drag event
           event.stopPropagation();
@@ -289,6 +298,7 @@
             // cleanup after ourselfs
             context.resetWebGLState();
           },
+
           initializeRenderer: function(context) {
             // initialize the three.js renderer
             //////////////////////////////////////////////////////////////////////////////////////
@@ -361,6 +371,60 @@
             this.camera.projectionMatrix.fromArray(camera.projectionMatrix);
           },
 
+          computeLastPosition: function() {
+            if (this.positionHistory.length == 0) {
+              return [0, 0, 0];
+            }
+
+            if (this.positionHistory.length == 1) {
+              var entry1 = this.positionHistory[
+                this.positionHistory.length - 1
+              ];
+              return entry1.pos;
+            }
+
+            var now = Date.now() / 1000;
+            var entry1 = this.positionHistory[this.positionHistory.length - 1];
+
+            // initialize the remembered ISS position
+            if (!this.lastPosition) {
+              this.lastPosition = entry1.pos;
+              this.lastTime = entry1.time;
+            }
+
+            // compute a new estimated position
+            var dt1 = now - entry1.time;
+
+            // animate for one sec
+            if(dt1 > 1) {
+              this.lastTime = now;
+              return this.lastPosition;
+            }
+
+            // compute direction
+            var lonDir = entry1.pos[0] - this.lastPosition[0];
+            var latDir = entry1.pos[1] - this.lastPosition[1];
+
+
+            // compute the delta of current and newly estimated position
+            var dPos = [
+              entry1.pos[0] - this.lastPosition[0],
+              entry1.pos[1] - this.lastPosition[1]
+            ];
+
+            // move the current position towards the estimated position
+            var newPos = [
+              this.lastPosition[0] + dPos[0] * dt1,
+              this.lastPosition[1] + dPos[1] * dt1,
+              entry1.pos[2]
+            ];
+
+            this.lastPosition = newPos;
+            this.lastTime = now;
+
+            return newPos;
+          },
+
           updateLights: function(context) {
             // update lighting
             /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -425,7 +489,7 @@
               this.updateCamera(context);
               this.updateLights(context);
 
-              var posEst = this.mjsPosition;
+              var posEst = this.computeLastPosition();
 
               this.originTransform.fromArray(
                 externalRenderers.renderCoordinateTransformAt(
@@ -477,28 +541,7 @@
 
               const localVector = new THREE.Vector3(location[0], location[1], location[2]);
               localVector.applyMatrix4(inverseTransform);
-
-
-
-              /*
-              var renderPos = [0, 0, 0];
-              externalRenderers.toRenderCoordinates(
-                view,
-                posEst,
-                0,
-                SpatialReference.WGS84,
-                renderPos,
-                0,
-                1
-              );
-
-              this.mesh.position.set(renderPos[0], renderPos[1], renderPos[2]);
-              this.mesh.rotateY(Math.PI / 1000);
-              console.log(this.mesh.rotation.y);
-              */
             }
-
-
 
             // draw the scene
             /////////////////////////////////////////////////////////////////////////////////////////////////////
