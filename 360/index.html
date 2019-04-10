@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Mapillary with SceneView</title>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.11/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.11/"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r79/three.js"></script>
+  <script
+    src="https://developers.arcgis.com/javascript/latest/sample-code/scene-external-renderer-threejs/live/./OBJLoader.js"></script>
+
+  <link href='https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.css' rel='stylesheet' />
+
+
+
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+
+    #mly {
+      width: 400px;
+      height: 500px;
+    }
+  </style>
+
+  <!-- Our application -->
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/views/3d/externalRenderers",
+      "esri/geometry/SpatialReference",
+      "esri/request",
+      "esri/core/urlUtils",
+      "esri/geometry/Polygon",
+      "esri/layers/GraphicsLayer",
+      "esri/Graphic",
+      "esri/layers/GeoJSONLayer",
+      "esri/layers/Layer",
+      "esri/views/layers/support/FeatureFilter",
+      "esri/layers/ElevationLayer",
+      "esri/geometry/Point",
+      'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
+    ], function (
+      Map,
+      SceneView,
+      externalRenderers,
+      SpatialReference,
+      esriRequest,
+      urlUtils,
+      Polygon,
+      GraphicsLayer,
+      Graphic,
+      GeoJSONLayer,
+      Layer,
+      FeatureFilter,
+      ElevationLayer,
+      Point,
+      Mapillary,
+      ) {
+        const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
+        const SEQ_KEY = '06QYYuMYk7lOj5MUs3X3cg';
+        const MAPILLARY_URL = 'https://a.mapillary.com/v3/sequences';
+        const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
+        const elevation = new ElevationLayer({
+          url: "https://scene.arcgis.com/arcgis/rest/services/Zurich_DTM/ImageServer"
+        });
+
+        let mapExtent = null;
+        var loader = new THREE.TextureLoader();
+        let layerView = null;
+
+        // create the containers
+        var info = document.createElement("div");
+        var newContent = document.createTextNode("Mapillary Sceneview playground. Click on marker to navigate, afterwards you can use streetview navigation.");
+
+        // add the text node to the newly created div
+        info.appendChild(newContent);
+
+        // create mapillary container
+        var mapillaryContainer = document.createElement('div');
+        mapillaryContainer.setAttribute("id", "mly");
+        var mly = null;
+
+        const loadData = async () => {
+          // add the image to the view
+          view.ui.add(info, "top-right");
+          view.ui.add(mapillaryContainer, "bottom-left");
+
+          mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
+          mly.on(Mapillary.Viewer.nodechanged, async (node) => {
+            var map = loader.load(`${IMAGE_URL}/${node.key}/thumb-2048.jpg`);
+            meshExternalRenderer.mesh.material.map = map;
+            // mapillary degrees, clockwise, zero pointing north
+            // three.js radians, anticlockwise, zero pointing east
+            meshExternalRenderer.mjsRotation = (-(node.computedCA * (Math.PI / 180))) - Math.PI / 2 ;
+
+            var time = Date.now() / 1000;
+            // update thjree.js state
+            var curElevation = await elevation.queryElevation(new Point({
+              longitude: node.computedLatLon.lon,
+              latitude: node.computedLatLon.lat
+            }));
+            meshExternalRenderer.positionHistory.push({
+              pos: [
+                node.computedLatLon.lon, 
+                node.computedLatLon.lat, 
+                curElevation.geometry.z + 4
+              ],
+              time: time,
+              roation: meshExternalRenderer.mjsRotation
+            });
+
+            // update sceneview
+            await view.goTo({
+              position: [node.computedLatLon.lon, node.computedLatLon.lat, curElevation.geometry.z + 4],
+              heading: node.computedCA,
+              tilt: 85,
+              zoom: 21,
+            });
+
+            var start = [node.computedLatLon.lon, node.computedLatLon.lat];
+            var stop = [view.camera.position.longitude, view.camera.position.latitude];
+            var camElevation = await elevation.queryElevation(new Point({
+              longitude: view.camera.position.longitude,
+              latitude: view.camera.position.latitude
+            }));
+
+            var polyline = {
+              type: "polyline", // autocasts as new Polyline()
+              paths: [
+                [...start, curElevation.geometry.z], 
+                [...stop, camElevation.geometry.z]
+              ]
+            };
+
+            layerView.filter = new FeatureFilter({
+              geometry: polyline,
+              spatialRelationship: 'disjoint'
+            });
+          });
+
+          mly.on(Mapillary.Viewer.bearingchanged, (heading) => {
+            view.goTo({ heading });
+          });
+
+          const url = `${MAPILLARY_URL}/${SEQ_KEY}?client_id=${CLIENT_ID}`;
+
+          const response = await fetch(url);
+          const seqJson = await response.json();
+
+          seqJson.geometry.coordinates.forEach((lnglat, index) => {
+            var geometry = {
+              type: "point", // autocasts as new Point()
+              x: lnglat[0],
+              y: lnglat[1]
+            };
+
+            symbol = {
+              type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+              color: [226, 119, 40],
+              outline: {
+                // autocasts as new SimpleLineSymbol()
+                color: [255, 255, 255],
+                width: 2
+              }
+            };
+
+            var attributes = {
+              key: seqJson.properties.coordinateProperties.image_keys[index],
+              cas: seqJson.properties.coordinateProperties.cas[index]
+            };
+
+            var pointGraphic = new Graphic({ geometry, symbol, attributes });
+
+            graphicsLayer.add(pointGraphic);
+
+          }); 
+
+          // add images as points
+          
+
+          // display the line sequences
+          const geojsonLayer = new GeoJSONLayer({
+            url: url,
+          });
+          await geojsonLayer.load();
+
+          mapExtent = geojsonLayer.fullExtent;
+
+          view.goTo({
+            center: mapExtent.center,
+          });
+
+          view.on("click", function (event) {
+            view.hitTest(event).then(function (response) {
+              // check if a feature is returned from the layer
+              // do something with the result graphic
+              const graphic = response.results.filter(function (result) {
+                return result.graphic.layer === graphicsLayer;
+              })[0].graphic;
+
+              const { key } = graphic.attributes;
+              meshExternalRenderer.mesh.material.map = loader.load(`${IMAGE_URL}/${key}/thumb-2048.jpg`);
+              mly.moveToKey(key); 
+            });
+          });
+
+          map.add(geojsonLayer);
+
+          // register the external renderer
+          externalRenderers.add(view, meshExternalRenderer);
+        };
+
+        var map = new Map({
+          basemap: "gray",
+          ground: "world-elevation"
+        });
+
+        map.ground.navigationConstraint = {
+          type: "none"
+        };
+
+        var graphicsLayer = new GraphicsLayer();
+        map.add(graphicsLayer);
+
+        var view = new SceneView({
+          container: "viewDiv",
+          map: map,
+          viewingMode: "global",
+          camera: {
+            heading: 0,
+            tilt: 45, // looking from a bird's eye view ,47.3766283
+            position: {
+              latitude: 47.376,
+              longitude: 8.559,
+              z: 900,
+              spatialReference: { wkid: 3857 }
+            }
+          }
+        });
+        
+        Layer.fromPortalItem({
+          portalItem: {
+            id: "1a87758a24724a879f5a7c17e739ab21"
+          }
+        })
+          .then(addLayer)
+          .catch(rejection);
+
+        // Adds the layer to the map once it loads
+        function addLayer(layer) {
+          layer.popupEnabled = false;
+          layer.renderer = {
+            type: "simple", // autocasts as new SimpleRenderer()
+            symbol: {
+              type: "mesh-3d",
+              symbolLayers: [{
+                type: "fill",
+                material: {
+                  color: [255, 255, 255, 0.9],
+                  // if buildings are textured, don't display the textures
+                  colorMixMode: "replace"
+                },
+                // set dark sketch edges
+                edges: {
+                  type: "sketch",
+                  color: [0, 0, 0, 0.8],
+                  size: 1,
+                  extensionLength: 2
+                }
+              }]
+            }
+          };
+
+          map.add(layer);
+          view.whenLayerView(layer).then(function(lView) {
+          // do something with the layerView
+            console.log("set layer view")
+            layerView = lView;
+          });
+        }
+
+        function rejection(error) {
+          console.log("Layer failed to load: ", error);
+        }
+
+        
+        
+        /*
+        // CAN added or removed depends if the navigation should be fixed
+        view.on("drag", function(event) {
+          // prevents panning with the mouse drag event
+          event.stopPropagation();
+        });
+
+        view.on("key-down", function(event) {
+          // prevents panning with the arrow keys
+          var keyPressed = event.key;
+          if (keyPressed.slice(0, 5) === "Arrow") {
+            event.stopPropagation();
+          }
+        });
+        */
+
+        // make request to map
+        loadData();
+
+        // Disable lighting based on the current camera position.
+        // We want to display the lighting according to the current time of day.
+        view.environment.lighting.cameraTrackingEnabled = false;
+
+        // Create our custom external renderer
+        //////////////////////////////////////////////////////////////////////////////////////
+
+        var meshExternalRenderer = {
+          renderer: null, // three.js renderer
+          camera: null, // three.js camera
+          scene: null, // three.js scene
+
+          ambient: null, // three.js ambient light source
+          sun: null, // three.js sun light source
+
+          mesh: null, // mesh model
+
+          positionHistory: [], // all mesh positions received so far
+
+          mjsRotation: 0,
+
+          originTransform: new THREE.Matrix4(),
+          originTransformInverse: new THREE.Matrix4(),
+          scaleVec: new THREE.Vector3(),  // not used (placeholder to not recreate every render call)
+
+          lastPosition: null,
+          lastTime: null,
+
+          /**
+           * Setup function, called once by the ArcGIS JS API.
+           */
+          setup: function (context) {
+            this.initializeRenderer(context);
+            this.initializeCamera(context);
+            this.initializeScene(context);
+            
+            
+
+            // Load an image file into a custom material
+            var material = new THREE.MeshLambertMaterial({
+              map: loader.load('https://s3.amazonaws.com/duhaime/blog/tsne-webgl/assets/cat.jpg'),
+            });
+
+            // create a plane geometry for the image with a width of 10
+            // and a height that preserves the image's aspect ratio
+            var geometry = new THREE.SphereGeometry(30, 60, 40);
+
+            // combine our image geometry and material into a mesh
+            this.mesh = new THREE.Mesh(geometry, material);
+
+            // add the model
+            this.scene.add(this.mesh);
+
+            // cleanup after ourselfs
+            context.resetWebGLState();
+          },
+
+          initializeRenderer: function (context) {
+            // initialize the three.js renderer
+            //////////////////////////////////////////////////////////////////////////////////////
+            this.renderer = new THREE.WebGLRenderer({
+              context: context.gl,
+              premultipliedAlpha: false
+            });
+
+            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.setViewport(0, 0, view.width, view.height);
+
+            // prevent three.js from clearing the buffers provided by the ArcGIS JS API.
+            this.renderer.autoClearDepth = false;
+            this.renderer.autoClearStencil = false;
+            this.renderer.autoClearColor = false;
+
+            // The ArcGIS JS API renders to custom offscreen buffers, and not to the default framebuffers.
+            // We have to inject this bit of code into the three.js runtime in order for it to bind those
+            // buffers instead of the default ones.
+            var originalSetRenderTarget = this.renderer.setRenderTarget.bind(
+              this.renderer
+            );
+            this.renderer.setRenderTarget = function (target) {
+              originalSetRenderTarget(target);
+              if (target == null) {
+                context.bindRenderTarget();
+              }
+            };
+          },
+
+          initializeCamera: function (context) {
+            const camera = context.camera;
+            this.camera = new THREE.PerspectiveCamera(camera.fovY, camera.aspect, camera.near, camera.far);
+          },
+
+          initializeScene: function (context) {
+            // setup the three.js scene
+            ///////////////////////////////////////////////////////////////////////////////////////
+            this.scene = new THREE.Scene();
+
+            // setup scene lighting
+            this.ambient = new THREE.AmbientLight(0xffffff);
+            this.scene.add(this.ambient);
+
+            this.sun = new THREE.DirectionalLight(0xffffff);
+            this.scene.add(this.sun);
+          },
+
+          updateCamera: function (context) {
+            const camera = context.camera;
+            const origin = new THREE.Vector3();
+            origin.setFromMatrixPosition(this.originTransform);
+
+            this.camera.position.set(camera.eye[0] - origin.x, camera.eye[1] - origin.y, camera.eye[2] - origin.z);
+            this.camera.up.set(camera.up[0], camera.up[1], camera.up[2]);
+            this.camera.lookAt(new THREE.Vector3(camera.center[0] - origin.x, camera.center[1] - origin.y, camera.center[2] - origin.z));
+
+            this.camera.projectionMatrix.fromArray(camera.projectionMatrix);
+          },
+
+          computeLastPosition: function () {
+            if (this.positionHistory.length == 0) {
+              return [0, 0, 0];
+            }
+
+            if (this.positionHistory.length == 1) {
+              var entry1 = this.positionHistory[
+                this.positionHistory.length - 1
+              ];
+              return entry1.pos;
+            }
+
+            var now = Date.now() / 1000;
+            var entry1 = this.positionHistory[this.positionHistory.length - 1];
+
+            // initialize the remembered ISS position
+            if (!this.lastPosition) {
+              this.lastPosition = entry1.pos;
+              this.lastTime = entry1.time;
+            }
+
+            // compute a new estimated position
+            var dt1 = now - entry1.time;
+
+            // animate for one sec
+            if (dt1 > 1) {
+              this.lastTime = now;
+              return this.lastPosition;
+            }
+
+            // compute direction
+            var lonDir = entry1.pos[0] - this.lastPosition[0];
+            var latDir = entry1.pos[1] - this.lastPosition[1];
+
+            // compute the delta of current and newly estimated position
+            var dPos = [
+              entry1.pos[0] - this.lastPosition[0],
+              entry1.pos[1] - this.lastPosition[1]
+            ];
+
+            // move the current position towards the estimated position
+            var newPos = [
+              this.lastPosition[0] + dPos[0] * dt1,
+              this.lastPosition[1] + dPos[1] * dt1,
+              entry1.pos[2]
+            ];
+
+            this.lastPosition = newPos;
+            this.lastTime = now;
+
+            return newPos;
+          },
+
+          updateLights: function (context) {
+            // update lighting
+            /////////////////////////////////////////////////////////////////////////////////////////////////////
+            view.environment.lighting.date = Date.now();
+
+            var l = context.sunLight;
+            this.sun.position.set(
+              l.direction[0],
+              l.direction[1],
+              l.direction[2]
+            );
+            this.sun.intensity = l.diffuse.intensity * 1.5;
+            this.sun.color = new THREE.Color(
+              l.diffuse.color[0],
+              l.diffuse.color[1],
+              l.diffuse.color[2]
+            );
+
+            this.ambient.intensity = l.ambient.intensity * 1.5;
+            this.ambient.color = new THREE.Color(
+              l.ambient.color[0],
+              l.ambient.color[1],
+              l.ambient.color[2]
+            );
+          },
+
+
+          render: function (context) {
+            // update mesh and region position
+            ///////////////////////////////////////////////////////////////////////////////////
+            if (this.mesh) {
+              this.updateCamera(context);
+              this.updateLights(context);
+
+              // compute the current mesh position in [lat, lng, evel]
+              var posEst = this.computeLastPosition();
+
+              // compute matrix to position
+              this.originTransform.fromArray(
+                externalRenderers.renderCoordinateTransformAt(
+                  view,
+                  posEst,
+                  mapExtent.center.spatialReference,
+                  null,
+                )
+              );
+              // compute the inverse
+              this.originTransformInverse.getInverse(this.originTransform);
+
+              // get render coordiantes for the position
+              const location = externalRenderers.toRenderCoordinates(
+                view,
+                posEst,
+                0,
+                mapExtent.center.spatialReference,
+                [0, 0, 0],
+                0,
+                1
+              );
+
+              // transform to three vec, apply roations and decompose into mesh pos and rot
+              const localLocation = new THREE.Vector3(location[0], location[1], location[2]);
+              localLocation.applyMatrix4(this.originTransformInverse);
+
+              const transform = this.originTransform.clone();
+              const rotation = new THREE.Matrix4();
+
+              rotation.makeRotationZ(this.mjsRotation);
+              transform.multiply(rotation);
+
+              rotation.makeRotationX(Math.PI / 2);
+              transform.multiply(rotation);
+
+              transform.decompose(this.mesh.position, this.mesh.quaternion, this.scaleVec);
+
+              // Use location as a local origin when rendering
+              this.mesh.position.set(0, 0, 0);
+              // flip the sphere inside out
+              this.mesh.scale.x = -1; 
+            }
+
+            // draw the scene
+            /////////////////////////////////////////////////////////////////////////////////////////////////////
+            this.renderer.resetGLState();
+            this.renderer.render(this.scene, this.camera);
+
+            // as we want to smoothly animate the mesh movement, immediately request a re-render
+            externalRenderers.requestRender(view);
+
+            // cleanup
+            context.resetWebGLState();
+          }
+        };
+      });
+  </script>
+</head>
+
+<body>
+  <div id="viewDiv"></div>
+</body>
+
+</html>
