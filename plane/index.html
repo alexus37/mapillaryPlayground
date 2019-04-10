@@ -47,6 +47,7 @@
       "esri/Graphic",
       "esri/layers/GeoJSONLayer",
       "esri/layers/Layer",
+      "esri/views/layers/support/FeatureFilter",
       'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
     ], function (
       Map,
@@ -60,14 +61,16 @@
       Graphic,
       GeoJSONLayer,
       Layer,
+      FeatureFilter,
       Mapillary,
       ) {
         const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
         const MAPILLARY_URL = 'https://a.mapillary.com/v3/images';
         const IMAGE_URL = "https://d1cuyjsrcm0gby.cloudfront.net";
-        const ELEVATION = 405; // in meter at the office
+        const ELEVATION = 407; // in meter at the office
         let mapExtent = null;
         var loader = new THREE.TextureLoader();
+        let layerView = null;
 
         // create the containers
         var info = document.createElement("div");
@@ -87,8 +90,9 @@
           view.ui.add(mapillaryContainer, "bottom-left");
 
           mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
-          mly.on(Mapillary.Viewer.nodechanged, function (node) {
-            meshExternalRenderer.mjsPosition = [node.computedLatLon.lon, node.computedLatLon.lat, ELEVATION];
+          mly.on(Mapillary.Viewer.nodechanged, async (node) => {
+            var map = loader.load(`${IMAGE_URL}/${node.key}/thumb-640.jpg`);
+            meshExternalRenderer.mesh.material.map = map;
             // mapillary degrees, clockwise, zero pointing north
             // three.js radians, anticlockwise, zero pointing east
             meshExternalRenderer.mjsRotation = (-(node.computedCA * (Math.PI / 180))) ;
@@ -100,18 +104,27 @@
               time: time,
               roation: meshExternalRenderer.mjsRotation
             });
-            
-            meshExternalRenderer.mesh.material
 
             // update sceneview
-            view.goTo({
+            await view.goTo({
               center: [node.latLon.lon, node.latLon.lat],
               heading: node.computedCA,
               tilt: 85,
               zoom: 21,
             });
-            var map = loader.load(`${IMAGE_URL}/${node.key}/thumb-640.jpg`);
-            meshExternalRenderer.mesh.material.map = map;
+
+            var polyline = {
+              type: "polyline", // autocasts as new Polyline()
+              paths: [
+                [node.computedLatLon.lon, node.computedLatLon.lat, ELEVATION], 
+                [view.camera.position.longitude, view.camera.position.latitude, ELEVATION]
+              ]
+            };
+
+            layerView.filter = new FeatureFilter({
+              geometry: polyline,
+              spatialRelationship: 'disjoint'
+            });
           });
 
           // add the study area
@@ -205,7 +218,6 @@
         
         Layer.fromPortalItem({
           portalItem: {
-            // autocasts as new PortalItem()
             id: "1a87758a24724a879f5a7c17e739ab21"
           }
         })
@@ -214,12 +226,42 @@
 
         // Adds the layer to the map once it loads
         function addLayer(layer) {
+          layer.popupEnabled = false;
+          layer.renderer = {
+            type: "simple", // autocasts as new SimpleRenderer()
+            symbol: {
+              type: "mesh-3d",
+              symbolLayers: [{
+                type: "fill",
+                material: {
+                  color: [255, 255, 255, 0.9],
+                  // if buildings are textured, don't display the textures
+                  colorMixMode: "replace"
+                },
+                // set dark sketch edges
+                edges: {
+                  type: "sketch",
+                  color: [0, 0, 0, 0.8],
+                  size: 1,
+                  extensionLength: 2
+                }
+              }]
+            }
+          };
+
           map.add(layer);
+          view.whenLayerView(layer).then(function(lView) {
+          // do something with the layerView
+            console.log("set layer view")
+            layerView = lView;
+          });
         }
 
         function rejection(error) {
           console.log("Layer failed to load: ", error);
         }
+
+        
         
         /*
         // CAN added or removed depends if the navigation should be fixed
@@ -256,12 +298,9 @@
           sun: null, // three.js sun light source
 
           mesh: null, // mesh model
-          meshScale: 0.01, // scale for the mesh model
-          meshMaterial: new THREE.MeshLambertMaterial({ color: 0xe03110 }), // material for the mesh model
 
           positionHistory: [], // all mesh positions received so far
 
-          mjsPosition: [8.5099, 47.389, 500],
           mjsRotation: 0,
 
           originTransform: new THREE.Matrix4(),
@@ -292,9 +331,6 @@
 
             // combine our image geometry and material into a mesh
             this.mesh = new THREE.Mesh(geometry, material);
-
-            // set the specified scale for the model
-            //this.mesh.scale.set(this.meshScale, this.meshScale, this.meshScale);
 
             // add the model
             this.scene.add(this.mesh);
@@ -344,10 +380,10 @@
             this.scene = new THREE.Scene();
 
             // setup scene lighting
-            this.ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            this.ambient = new THREE.AmbientLight(0xffffff);
             this.scene.add(this.ambient);
 
-            this.sun = new THREE.DirectionalLight(0xffffff, 10000.5);
+            this.sun = new THREE.DirectionalLight(0xffffff);
             this.scene.add(this.sun);
           },
 
@@ -427,14 +463,14 @@
               l.direction[1],
               l.direction[2]
             );
-            this.sun.intensity = l.diffuse.intensity;
+            this.sun.intensity = l.diffuse.intensity * 1.5;
             this.sun.color = new THREE.Color(
               l.diffuse.color[0],
               l.diffuse.color[1],
               l.diffuse.color[2]
             );
 
-            this.ambient.intensity = l.ambient.intensity;
+            this.ambient.intensity = l.ambient.intensity * 1.5;
             this.ambient.color = new THREE.Color(
               l.ambient.color[0],
               l.ambient.color[1],
