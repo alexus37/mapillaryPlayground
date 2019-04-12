@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Mapillary with SceneView</title>
+
+  <script src="https://js.arcgis.com/4.11/"></script>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.11/esri/themes/light/main.css" />
+  <link href='https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.css' rel='stylesheet' />
+
+  <style>
+      html,
+      body,
+      #viewDiv {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+
+      #mly {
+        width: 400px;
+        height: 500px;
+      }
+    </style>
+
+
+  <!-- Our application -->
+  <script src="index.js"></script>
+</head>
+
+<body>
+  <div id="viewDiv"></div>
+</body>
+
+</html>
