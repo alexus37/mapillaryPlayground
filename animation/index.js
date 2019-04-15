@@ -122,11 +122,62 @@ require([
 
       view.environment.lighting.cameraTrackingEnabled = false;
 
+      const nodeHitFn = (event) => {
+        view.hitTest(event).then(function (response) {
+          console.log('Node clicked');
+          // check if a feature is returned from the layer
+          // do something with the result graphic
+          const graphic = response.results.filter(function (result) {
+            return result.graphic.layer === graphicsLayer;
+          })[0].graphic;
+
+          const { key } = graphic.attributes;
+          mly.moveToKey(key);
+        });
+      }
+
       view.when(() => {
         console.log('Map loaded');
         var mapillaryContainer = document.createElement('div');
         mapillaryContainer.setAttribute("id", "mly");
         view.ui.add(mapillaryContainer, "bottom-left");
+
+
+        window.dragstart_handler = function (ev) {
+          console.log("dragStart");
+          // Set the drag's format and data. Use the event target's id for the data
+          ev.dataTransfer.setData("text/plain", ev.target.id);
+          // Create an image and use it for the drag image
+          // NOTE: change "example.gif" to an existing image or the image will not
+          // be created and the default drag image will be used.
+          var img = new Image();
+          img.src = 'drag.png';
+          img.height = 42;
+          img.width = 42;
+          ev.dataTransfer.setDragImage(img, 32, 32);
+        }
+
+        window.dragend_handler = function (ev) {
+          console.log('dragend global');
+          const mapPoint = view.toMap(ev); // get lat long of the screen point
+          nodeHitFn(ev);
+        }
+
+        var dropContainer = document.createElement('div');
+        dropContainer.setAttribute("id", "dropContainer");
+        var elem = document.createElement("img");
+        elem.setAttribute("src", "drag.png");
+        elem.setAttribute("id", "dragImg");
+        elem.setAttribute("draggable", "true");
+        elem.setAttribute("ondragstart", "dragstart_handler(event);");
+        elem.setAttribute("height", "64");
+        elem.setAttribute("width", "64");
+
+        dropContainer.appendChild(elem);
+
+        view.ui.add(dropContainer, "bottom-right");
+
+        view.on("click", nodeHitFn);
 
         // fetch some stuff
         loadData();
@@ -236,20 +287,6 @@ require([
 
 
         mapExtent = geojsonLayer.fullExtent;
-
-        view.on("click", function (event) {
-          view.hitTest(event).then(function (response) {
-            console.log('Node clicked');
-            // check if a feature is returned from the layer
-            // do something with the result graphic
-            const graphic = response.results.filter(function (result) {
-              return result.graphic.layer === graphicsLayer;
-            })[0].graphic;
-
-            const { key } = graphic.attributes;
-            mly.moveToKey(key);
-          });
-        });
 
 
         // register the external renderer

@@ -48,7 +48,6 @@ define(function (require, exports, module) {
         zoom: 23.5,
         tilt: 80,
       });
-      this.view.
     });
 
     this.mly.on(Mapillary.Viewer.bearingchanged, (heading) => {
