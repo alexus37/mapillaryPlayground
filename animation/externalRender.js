@@ -9,17 +9,16 @@ define(function (require, exports, module) {
     this.ambient = null; // three.js ambient light source
     this.sun = null; // three.js sun light source
     this.mesh = null; // mesh model
-    this.meshScale = 0.07; // scale for the mesh model
+    this.meshScale = 0.02; // scale for the mesh model
     this.meshMaterial = new THREE.MeshLambertMaterial({ color: 0xe03110 }); // material for the mesh model
     this.positionHistory = []; // all mesh positions received so far
-    this.mjsPosition = [8.5099, 47.389, 500];
-    this.mjsRotation = 0;
     this.originTransform = new THREE.Matrix4();
     this.originTransformInverse = new THREE.Matrix4();
     this.scaleVec = new THREE.Vector3();  // not used (placeholder to not recreate every render call)
     this.lastPosition = null;
-    this.lastTime = null;
+    this.lastRotation = null;
     this.mixer = null;
+    this.animationStoped = false;
     this.prevTime = Date.now();
   }
 
@@ -105,23 +104,23 @@ define(function (require, exports, module) {
 
   MeshRenderer.prototype.computeLastPosition = function () {
     if (this.positionHistory.length == 0) {
-      return [0, 0, 0];
+      return [[0, 0, 0], 0];
     }
 
     if (this.positionHistory.length == 1) {
       var entry1 = this.positionHistory[
         this.positionHistory.length - 1
       ];
-      return entry1.pos;
+      return [entry1.pos, entry1.rotation];
     }
 
     var now = Date.now() / 1000;
     var entry1 = this.positionHistory[this.positionHistory.length - 1];
 
-    // initialize the remembered ISS position
+    // initialize the remembered position
     if (!this.lastPosition) {
       this.lastPosition = entry1.pos;
-      this.lastTime = entry1.time;
+      this.lastRotation = entry1.rotation;
     }
 
     // compute a new estimated position
@@ -129,9 +128,13 @@ define(function (require, exports, module) {
 
     // animate for one sec
     if (dt1 > 1) {
-      this.lastTime = now;
-      return this.lastPosition;
+      this.animationStoped = true;
+      this.lastPosition = entry1.pos;
+      this.lastRotation = entry1.rotation;
+      return [this.lastPosition, this.lastRotation];
     }
+
+    this.animationStoped = false;
 
     // compute the delta of current and newly estimated position
     var dPos = [
@@ -146,10 +149,13 @@ define(function (require, exports, module) {
       entry1.pos[2]
     ];
 
-    this.lastPosition = newPos;
-    this.lastTime = now;
+    var newRotation = this.lastRotation;
 
-    return newPos;
+    console.log(newRotation);
+
+    //this.lastPosition = newPos;
+
+    return [ newPos, newRotation ];
   },
 
   MeshRenderer.prototype.updateLights = function (context) {
@@ -187,7 +193,7 @@ define(function (require, exports, module) {
       this.updateLights(context);
 
       // compute the current mesh position in [lat, lng, evel]
-      var posEst = this.computeLastPosition();
+      const [ posEst, mjsRotation ] = this.computeLastPosition();
 
       // compute matrix to position
       this.originTransform.fromArray(
@@ -219,7 +225,7 @@ define(function (require, exports, module) {
       const transform = this.originTransform.clone();
       const rotation = new THREE.Matrix4();
 
-      rotation.makeRotationZ(this.mjsRotation);
+      rotation.makeRotationZ(mjsRotation);
       transform.multiply(rotation);
 
       rotation.makeRotationX(Math.PI / 2);
@@ -236,7 +242,7 @@ define(function (require, exports, module) {
     /////////////////////////////////////////////////////////////////////////////////////////////////////
     this.renderer.state.reset();
 
-    if (this.mixer) {
+    if (this.mixer && !this.animationStoped) {
       var time = Date.now();
       this.mixer.update((time - this.prevTime) * 0.001);
       this.prevTime = time;
