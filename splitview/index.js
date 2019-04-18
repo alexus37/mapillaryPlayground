@@ -65,6 +65,12 @@ require([
       // what is the current camera mode
       let lookAroundMode = false;
 
+      // drag animation id
+      let dragAnimationId = null;
+      let drag  = false;
+      let coordX = 0;
+      let coordY = 0;
+
       // sceneview camera parameters
       let curCamHeading = 0;
       let isDragging = false;
@@ -169,18 +175,81 @@ require([
           console.log("dragStart");
           // Set the drag's format and data. Use the event target's id for the data
           ev.dataTransfer.setData("text/plain", ev.target.id);
-          // Create an image and use it for the drag image
-          // NOTE: change "example.gif" to an existing image or the image will not
-          // be created and the default drag image will be used.
-          var img = new Image();
-          img.src = 'drag.png';
-          img.height = 42;
-          img.width = 42;
-          ev.dataTransfer.setDragImage(img, 32, 32);
+         // determine event object
+
+          if(ev.preventDefault) ev.preventDefault();
+
+          // IE uses srcElement, others use target
+
+				  // calculate event X, Y coordinates
+					offsetX = ev.clientX;
+					offsetY = ev.clientY;
+
+          // calculate integer values for top and left
+          // properties
+
+
+          let position = 0;
+          let interval =  100;
+          var elem = document.createElement("div");
+          elem.id = "dragContainer";
+          elem.style.backgroundImage= "url('spritesheet.png')";
+          if(!elem.style.left) {
+            elem.style.left=`${offsetX - 48 }px`;
+          }
+
+				  if(!elem.style.top) {
+            elem.style.top=`${offsetY  - 48 }px`;
+          }
+
+          coordX = parseInt(elem.style.left);
+          coordY = parseInt(elem.style.top);
+          drag = true;
+
+          document.body.appendChild(elem);
+
+          dragAnimationId = setInterval( () => {
+            var curElem = document.getElementById("dragContainer");
+            curElem.style.backgroundPosition = `-${position}px 0px`;
+            //we use the ES6 template literal to insert the variable "position"
+            if (position < 3552) {
+              position = position + 96;
+            } else {
+              position = 0;
+            }
+          }, interval );
+
+
+          document.onmousemove=dragDiv;
+          // return false;
         }
         window.dragend_handler = function (ev) {
           console.log('dragend global');
           nodeHitFn(ev);
+        }
+        // Let's remove the created ghost elem on dragend
+        document.addEventListener("mouseup", function(e) {
+          if(drag) {
+            drag=false;
+            var ghost = document.getElementById("dragContainer");
+            if (ghost.parentNode) {
+              ghost.parentNode.removeChild(ghost);
+              clearInterval(dragAnimationId);
+            }
+            console.log('dragend global');
+            nodeHitFn(e);
+          }
+        }, false);
+
+        function dragDiv(e) {
+          if (!drag) {return};
+          if (!e) { var e= window.event};
+          // var targ=e.target?e.target:e.srcElement;
+          // move div element
+          var targ = document.getElementById("dragContainer");
+          targ.style.left=coordX+e.clientX-offsetX+'px';
+          targ.style.top=coordY+e.clientY-offsetY+'px';
+          return false;
         }
 
 

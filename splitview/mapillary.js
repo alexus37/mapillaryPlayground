@@ -1,4 +1,4 @@
-const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
+const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQToyNGZlZDQzNzQ3ZTIyZTYz';
 const MAPILLARY_URL = 'https://a.mapillary.com/v3/sequences';
 
 define(function (require, exports, module) {
