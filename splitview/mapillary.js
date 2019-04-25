@@ -1,4 +1,4 @@
-const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTowZTYyYWVmOGI0Mjg5OWFm';
+const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTplOTg4MjFkOTNkYzg0ZTlk';
 const MAPILLARY_URL = 'https://a.mapillary.com/v3/sequences';
 
 define(function (require, exports, module) {
@@ -11,6 +11,7 @@ define(function (require, exports, module) {
     this.position = null;
     this.nodeBearing = null;
     this.activeState = false;
+    this.mlyInitalized = false;
 
     this.mly.on(Mapillary.Viewer.nodechanged, async (node) => {
       const curElevation = await this.elevationService.queryElevation(new this.Point({
@@ -122,6 +123,15 @@ define(function (require, exports, module) {
     }
 
     return value;
+  }
+
+  MapillaryWrapper.prototype.show = function() {
+    if(!this.mlyInitalized) {
+      this.mlyInitalized = true;
+      document.getElementById('mly').style.width = '50%';
+      document.getElementById('viewDiv').style.width = '50%';
+      document.getElementById('viewDiv').style.left = '50%';
+    }
   }
 
 

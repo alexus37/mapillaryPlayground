@@ -1,47 +1,51 @@
 require([
-  "esri/Map",
-  "esri/views/SceneView",
   "esri/views/3d/externalRenderers",
-  "esri/geometry/Polygon",
-  "esri/geometry/Polyline",
-  "esri/layers/GraphicsLayer",
-  "esri/Graphic",
-  "esri/layers/GeoJSONLayer",
-  "esri/layers/Layer",
-  "esri/layers/ElevationLayer",
   "esri/geometry/Point",
-  "esri/geometry/geometryEngine",
-  "esri/geometry/support/webMercatorUtils",
-  "esri/core/watchUtils",
   'https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.js',
   "https://cdnjs.cloudflare.com/ajax/libs/three.js/103/three.js",
 ], (
-  Map,
-  SceneView,
   externalRenderers,
-  Polygon,
-  Polyline,
-  GraphicsLayer,
-  Graphic,
-  GeoJSONLayer,
-  Layer,
-  ElevationLayer,
   Point,
-  geometryEngine,
-  webMercatorUtils,
-  watchUtils,
   Mapillary,
   THREE,
   ) => {
     window.THREE = THREE;
     require([
+      './esri.js',
       './externalRender.js',
       './mapillary.js',
-      './GLTFLoader.js'
+      './GLTFLoader.js',
     ], (
+      { EsriWrapper },
       { MeshRenderer },
-      { MapillaryWrapper }
+      { MapillaryWrapper },
     ) => {
+
+      const esriWrapper = new EsriWrapper();
+      const loadData2 = esriWrapper.loadData.bind(esriWrapper);
+      let meshExternalRenderer = null;
+      let mly = null;
+
+      loadData2().then(function() {
+        meshExternalRenderer = new MeshRenderer(
+          externalRenderers,
+          esriWrapper.getView(),
+          esriWrapper.getMapExtent()
+        );
+        mly = new MapillaryWrapper(
+          Mapillary,
+          Point,
+          meshExternalRenderer,
+          esriWrapper.getElevationService(),
+          esriWrapper.getView(),
+        );
+        esriWrapper.setMappilary(mly);
+        // Resize the viewer when the window is resized.
+        window.addEventListener("resize", function() { mly.resize(); }); // TODO: fix me
+
+        esriWrapper.addExternalRenderer(meshExternalRenderer);
+      });
+      return;
       console.log('Requirements loaded');
       // ============== CONSTANTS ==================== //
 
@@ -54,9 +58,9 @@ require([
       // current map extend
       let mapExtent = null;
       // the external threejs renderer
-      let meshExternalRenderer = null;
+      // let meshExternalRenderer = null;
       // the mapillary object (wrapped)
-      let mly = null;
+      // let mly = null;
       let mlyInitalized = false;
 
       // which container is currently hovered
@@ -387,7 +391,8 @@ require([
           view
         );
         // Resize the viewer when the window is resized.
-        window.addEventListener("resize", function() { mly.resize(); });
+        window.addEventListener("resize", function() { mly.resize(); }); // TODO: fix me
+
         externalRenderers.add(view, meshExternalRenderer);
       };
     });
