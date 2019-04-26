@@ -41,7 +41,22 @@ define([
   exports.EsriWrapper = function() {
     // VARS
     this.mly = null;
-    this.lookAroundMode = true;
+    this.lookAroundMode = false;
+    this.isDragging = true;
+    this.center = null;
+    this.screenPoint = null;
+    this.scale = null;
+    this.camera = null;
+    this.curCamHeading = null;
+    this.currentHover = null;
+
+    // drag
+    this.dragAnimationId = null;
+    this.drag  = false;
+    this.coordX = 0;
+    this.coordY = 0;
+    this.offsetX = 0;
+    this.offsetY = 0;
 
     // create elevation service, map and view
     this.elevationService = new ElevationLayer({ url: ELEVATION_SERVICE_URL });
@@ -123,10 +138,11 @@ define([
       console.log('Node clicked');
       // check if a feature is returned from the layer
       // do something with the result graphic
-      const graphic = response.results.filter(result => result.graphic.layer === graphicsLayer)[0].graphic;
+      const graphic = response.results.filter(result => result.graphic.layer === this.graphicsLayer)[0].graphic;
 
       const { key } = graphic.attributes;
       this.mly.show();
+      this.lookAroundMode = true;
       this.mly.moveToKey(key);
     });
   }
@@ -136,20 +152,79 @@ define([
       console.log("dragStart");
       // Set the drag's format and data. Use the event target's id for the data
       ev.dataTransfer.setData("text/plain", ev.target.id);
-      // Create an image and use it for the drag image
-      // NOTE: change "example.gif" to an existing image or the image will not
-      // be created and the default drag image will be used.
-      var img = new Image();
-      img.src = 'drag.png';
-      img.height = 42;
-      img.width = 42;
-      ev.dataTransfer.setDragImage(img, 32, 32);
-    }
+      // determine event object
+
+      if(ev.preventDefault) ev.preventDefault();
+
+      // calculate event X, Y coordinates
+      this.offsetX = ev.clientX;
+      this.offsetY = ev.clientY;
+
+      let position = 0;
+      let interval =  100;
+      var elem = document.createElement("div");
+      elem.id = "dragContainer";
+      elem.style.backgroundImage= "url('spritesheet.png')";
+      if(!elem.style.left) {
+        elem.style.left=`${this.offsetX - 48 }px`;
+      }
+
+      if(!elem.style.top) {
+        elem.style.top=`${this.offsetY  - 48 }px`;
+      }
+
+      this.coordX = parseInt(elem.style.left);
+      this.coordY = parseInt(elem.style.top);
+      this.drag = true;
+
+      document.body.appendChild(elem);
+
+      this.dragAnimationId = setInterval( () => {
+        var curElem = document.getElementById("dragContainer");
+        curElem.style.backgroundPosition = `-${position}px 0px`;
+        //we use the ES6 template literal to insert the variable "position"
+        if (position < 3552) {
+          position = position + 96;
+        } else {
+          position = 0;
+        }
+      }, interval );
+
+
+      document.onmousemove=dragDiv;
+    }.bind(this);
+
+
     window.dragend_handler = function (ev) {
       console.log('dragend global');
       this.nodeHitFn(ev);
-    }
+    }.bind(this);
+
+    document.addEventListener("mouseup", function(e) {
+      if(this.drag) {
+        this.drag=false;
+        var ghost = document.getElementById("dragContainer");
+        if (ghost.parentNode) {
+          ghost.parentNode.removeChild(ghost);
+          clearInterval(this.dragAnimationId);
+        }
+        console.log('dragend global');
+        this.nodeHitFn(e);
+      }
+    }.bind(this), false);
+
+    window.dragDiv = function(e) {
+      if (!this.drag) {return};
+      if (!e) { var e= window.event};
+      // var targ=e.target?e.target:e.srcElement;
+      // move div element
+      var targ = document.getElementById("dragContainer");
+      targ.style.left = this.coordX + e.clientX - this.offsetX + 'px';
+      targ.style.top = this.coordY + e.clientY - this.offsetY + 'px';
+      return false;
+    }.bind(this);
   }
+
   exports.EsriWrapper.prototype.getMapExtent = function() {
     return this.mapExtent;
   }
@@ -172,33 +247,33 @@ define([
       // prevents panning with the mouse drag event
       switch (event.action) {
         case "start":
-          isDragging = true;
-          center = view.center.clone();
-          screenPoint = { x: event.x, y: event.y };
-          scale = view.scale;
-          camera = view.camera.clone();
+          this.isDragging = true;
+          this.center = this.view.center.clone();
+          this.screenPoint = { x: event.x, y: event.y };
+          this.scale = this.view.scale;
+          this.camera = this.view.camera.clone();
           break;
         case "update":
-          if (!isDragging) {
+          if (!this.isDragging) {
             return;
           }
-          var dx = event.x - screenPoint.x;
-          var dy = event.y - screenPoint.y; // tilt not possible to set in mappilary
-          var newCenter = center.clone();
+          var dx = event.x - this.screenPoint.x;
+          var dy = event.y - this.screenPoint.y; // tilt not possible to set in mappilary
+          var newCenter = this.center.clone();
           //newCenter.x -= dx * scale / 2000;
-          newCenter.y -= dy * scale / 2000;
+          newCenter.y -= dy * this.scale / 2000;
           console.log(newCenter.y);
-          view.goTo({
+          this.view.goTo({
             center: newCenter,
-            position: camera.position,
-            scale: scale,
+            position: this.camera.position,
+            scale: this.scale,
           }, { animate: false });
           break;
         case "end":
-          if (!isDragging) {
+          if (!this.isDragging) {
             return;
           }
-          isDragging = false;
+          this.isDragging = false;
           break;
       }
       event.stopPropagation();
@@ -221,10 +296,10 @@ define([
     const viewModeSwitch = document.createElement('button');
     viewModeSwitch.setAttribute("id", "viewModeSwitch");
     viewModeSwitch.innerHTML = "toggle look around";
-    window.toggleCamMode = () => {
-      lookAroundMode = !lookAroundMode;
-      document.getElementById('viewModeSwitch').innerHTML = lookAroundMode? "deactivate look around" : "activate look around";
-    }
+    window.toggleCamMode = function () {
+      this.lookAroundMode = !this.lookAroundMode;
+      document.getElementById('viewModeSwitch').innerHTML = this.lookAroundMode? "deactivate look around" : "activate look around";
+    }.bind(this);
     viewModeSwitch.setAttribute("onclick", "toggleCamMode();");
     this.view.ui.add(viewModeSwitch, "top-right");
   }
@@ -234,9 +309,9 @@ define([
     console.log(this);
     this.createGlobalFn();
 
-    // TODO: refactor => index.js
+    // TODO: refactor => index.js add setter
     const hoverHandler = function ( mode) {
-      currentHover = mode;
+      this.currentHover = mode;
       this.mly && this.mly.setActive(mode === 'mappilary');
     }.bind(this);
 
@@ -249,16 +324,12 @@ define([
     this.createUi();
 
     watchUtils.watch(this.view, "camera", (e) => {
-      if(e.heading !== curCamHeading && currentHover === 'sceneviewer' && mlyInitalized) {
+      if(e.heading !== this.curCamHeading && this.currentHover === 'sceneviewer' && this.mly.mlyInitalized) {
         console.log('SV camera changed: Update MJS');
-        curCamHeading = e.heading;
-        this.mly.setBearing(curCamHeading);
+        this.curCamHeading = e.heading;
+        this.mly.setBearing(this.curCamHeading);
       }
     });
-
-    // fetch some stuff
-    //const loadData = this.loadData.bind(this);
-    // loadData();
   }
 
   exports.EsriWrapper.prototype.loadData = function(){
