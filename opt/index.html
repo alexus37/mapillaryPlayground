@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Mapillary with SceneView</title>
+
+  <script src="https://js.arcgis.com/4.11/"></script>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.11/esri/themes/light/main.css" />
+  <link href='https://unpkg.com/mapillary-js@2.17.0/dist/mapillary.min.css' rel='stylesheet' />
+
+  <style>
+      html,
+      body {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+      #viewDiv {
+        position: absolute;
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+        z-index: 2;
+        -webkit-transition:1000ms linear;
+        -moz-transition:1000ms linear;
+        -o-transition:1000ms linear;
+        -ms-transition:1000ms linear;
+        transition:1000ms linear;
+      }
+
+      #mly {
+        position: absolute;
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 50%;
+        z-index: 1;
+        -webkit-transition:1000ms linear;
+        -moz-transition:1000ms linear;
+        -o-transition:1000ms linear;
+        -ms-transition:1000ms linear;
+        transition:1000ms linear;
+      }
+      .container {
+        display: flex;
+        flex-direction: row;
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+
+      #dragContainer {
+        width: 96px;
+        height: 96px;
+        position: absolute;
+        cursor: move;
+        z-index: 100;
+      }
+
+      #twoDMap {
+        height: 250px;
+        width: 250px;
+      }
+    </style>
+
+
+  <!-- Our application -->
+  <script src="index.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <div id="mly"></div>
+    <div id="viewDiv"
+      ondragend="dragend_handler(event);"
+    ></div>
+  </div>
+</body>
+
+</html>
