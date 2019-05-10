@@ -4,6 +4,17 @@ const STUDY_AREA_URL = 'studyAreaOffice.json';
 
 const SEQ_TO_LOAD = 1000;
 const OFFSET_DISTANCE = 150; // in meters
+const INITIAL_LAT = 47.389;
+const INITIAL_LNG = 8.5099;
+const FLY_TO_HIGHT = 550; // meters after exit the streetview
+const NAV_SYMBOL = {
+  type: "simple-marker",
+  style: "path",
+  path: "M 93.738093,28.069939 65.635025,83.619958 92.323865,67.410291 118.30877,84.928003 Z",
+  angle: -20,
+  size: 19,
+  color: [230, 0, 0, 1]
+};
 
 define([
   'exports',
@@ -61,6 +72,9 @@ define([
     this.offsetX = 0;
     this.offsetY = 0;
 
+    // 2D Map vars
+    this.viewMarkerGraphic = null;
+
     // create elevation service, map and view
     this.elevationService = new ElevationLayer({ url: ELEVATION_SERVICE_URL });
     this.map = new Map({ basemap: "gray", ground: "world-elevation" });
@@ -77,8 +91,8 @@ define([
         heading: 0,
         tilt: 45, // looking from a bird's eye view
         position: {
-          latitude: 47.389,
-          longitude: 8.5099,
+          latitude: INITIAL_LAT,
+          longitude: INITIAL_LNG,
           z: 900,
           spatialReference: {
             wkid: 3857
@@ -159,17 +173,33 @@ define([
     elem.setAttribute("src", "close.png");
     elem.setAttribute("draggable", "false");
     elem.setAttribute("onclick", "exitStreetview();");
-    elem.removeAttribute("ondragstart")
+    elem.removeAttribute("ondragstart");
+
+    const twoDMap = document.getElementById('twoDMap');
+    twoDMap.style.zIndex = 1;
   }
 
   exports.EsriWrapper.prototype.exitStreetView = function() {
+    this.camera = this.view.camera.clone();
     this.mly.hide();
+    this.camera.position.z = FLY_TO_HIGHT;
+
+    this.view.goTo({
+      position: this.camera.position,
+      tilt: 45
+    });
+
     this.lookAroundMode = false;
     const elem = document.getElementById('dragImg');
     elem.setAttribute("src", "drag.png");
     elem.setAttribute("draggable", "true");
     elem.setAttribute("ondragstart", "dragstart_handler(event);");
-    elem.removeAttribute("onclick")
+    elem.removeAttribute("onclick");
+
+    // hide 2d map
+    const twoDMap = document.getElementById('twoDMap');
+    twoDMap.style.zIndex = -1;
+
   }
 
   exports.EsriWrapper.prototype.createGlobalFn = function() {
@@ -326,12 +356,35 @@ define([
     var twoDMap = document.createElement('div');
     twoDMap.setAttribute("id", "twoDMap");
     this.view.ui.add(twoDMap, 'top-right');
+
+    const map = new Map({ basemap: "gray", ground: "world-elevation" });
+
+    const geometry = {
+      type: "point", // autocasts as new Point()
+      longitude: INITIAL_LNG,
+      latitude: INITIAL_LAT
+    }
+    this.viewMarkerGraphic = new Graphic({
+      geometry,
+      symbol: NAV_SYMBOL
+    });
+
+    const graphicsLayer = new GraphicsLayer();
+    graphicsLayer.add(this.viewMarkerGraphic);
+    map.add(graphicsLayer);
+
     this.mapView = new MapView({
-      map: new Map({ basemap: "gray", ground: "world-elevation" }), // this.map,  // References a Map instance
+      map,
       container: "twoDMap"  // References the ID of a DOM element
     });
+
     this.mapView.ui.remove('zoom');
     this.mapView.ui.remove('attribution');
+    const stopPropagation = function(event) { event.stopPropagation(); };
+    this.mapView.on("click", stopPropagation);
+    this.mapView.on("drag", stopPropagation);
+    this.mapView.on("mouse-wheel", stopPropagation);
+    this.mapView.on("double-click", stopPropagation);
   }
 
   exports.EsriWrapper.prototype.initCallback = function () {
@@ -363,6 +416,8 @@ define([
       // sync the map view
       this.mapView.center = e.position;
       this.mapView.zoom = 16;
+      this.viewMarkerGraphic.geometry = e.position;
+      this.viewMarkerGraphic.symbol = {...NAV_SYMBOL, angle:  e.heading};
     });
   }
 
@@ -429,18 +484,29 @@ define([
         if(geometryEngine.contains(
           bufferGeometry,
           webMercatorUtils.geographicToWebMercator(geometry))) {
-          symbol = {
-            type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
-            color: [226, 119, 40],
-          };
+            const attributes = {
+              key: feature.properties.coordinateProperties.image_keys[index],
+              cas: feature.properties.coordinateProperties.cas[index]
+            };
+            symbol = {
+              type: "point-3d",  // autocasts as new PointSymbol3D()
+              symbolLayers: [{
+                type: "object",  // autocasts as new ObjectSymbol3DLayer()
+                width: 3,  // diameter of the object from east to west in meters
+                height: 1,  // height of the object in meters
+                heading: 180 + attributes.cas  ,
+                depth: 4,  // diameter of the object from north to south in meters
+                resource: { primitive: "tetrahedron" },
+                material: { color: "red" }
+              }]
+            };
 
-          var attributes = {
-            key: feature.properties.coordinateProperties.image_keys[index],
-            cas: feature.properties.coordinateProperties.cas[index]
-          };
 
-          var pointGraphic = new Graphic({ geometry, symbol, attributes });
-          this.graphicsLayer.add(pointGraphic);
+            var pointGraphic = new Graphic({
+              geometry,
+              symbol,
+              attributes });
+            this.graphicsLayer.add(pointGraphic);
         }
       });
 
