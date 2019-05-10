@@ -2,11 +2,11 @@ const CLIENT_ID = 'YzhHRGF3TExNTzkxR3JBWGxZRjNXQTplOTg4MjFkOTNkYzg0ZTlk';
 const MAPILLARY_URL = 'https://a.mapillary.com/v3/sequences';
 
 define(function (require, exports, module) {
-  function MapillaryWrapper(Mapillary, Point, meshExternalRenderer, elevationService, view) {
+  function MapillaryWrapper(Mapillary, Point, meshExternalRenderer, elevationService, goToSync) {
     this.mly = new Mapillary.Viewer('mly', CLIENT_ID, null);
     this.meshExternalRenderer = meshExternalRenderer;
     this.elevationService = elevationService;
-    this.view = view;
+    this.goToSync = goToSync;
     this.Point = Point;
     this.position = null;
     this.nodeBearing = null;
@@ -47,7 +47,7 @@ define(function (require, exports, module) {
       // save bearing of current node
       this.nodeBearing = node.computedCA;
       // update sceneview
-      this.view.goTo({
+      this.goToSync({
         position: this.position,
         heading: node.computedCA,
         zoom: 23.5,
@@ -58,7 +58,7 @@ define(function (require, exports, module) {
     this.mly.on(Mapillary.Viewer.bearingchanged, (heading) => {
       if(this.activeState) {
         console.log('MJS camera changed: Update SV');
-        view.goTo({
+        this.goToSync({
           position: this.position,
           heading,
           tilt: 85

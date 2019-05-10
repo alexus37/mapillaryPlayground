@@ -7,6 +7,8 @@ const OFFSET_DISTANCE = 150; // in meters
 const INITIAL_LAT = 47.389;
 const INITIAL_LNG = 8.5099;
 const FLY_TO_HIGHT = 550; // meters after exit the streetview
+const VIEW_RADIUS = 100; //meters
+
 const NAV_SYMBOL = {
   type: "simple-marker",
   style: "path",
@@ -63,6 +65,8 @@ define([
     this.camera = null;
     this.curCamHeading = null;
     this.currentHover = null;
+    this.imageTrajectories = [];
+    this.imageGraphics = [];
 
     // drag
     this.dragAnimationId = null;
@@ -101,9 +105,13 @@ define([
       }
     });
     this.view.environment.lighting.cameraTrackingEnabled = false;
+    this.goToSync.bind(this)
     this.view.when(this.initCallback.bind(this));
     this.view.on("click", this.nodeHitFn.bind(this));
     this.view.on("drag", this.dragHandler.bind(this));
+    this.view.on("mouse-wheel", this.mouseWheelHandler.bind(this));
+    this.view.on("double-click", this.mouseWheelHandler.bind(this));
+
     this.view.ui.remove('zoom');
     this.view.ui.remove('compass');
     this.view.ui.remove('navigation-toggle');
@@ -165,6 +173,21 @@ define([
     });
   }
 
+  exports.EsriWrapper.prototype.goToSync = function(target, options) {
+    this.view.goTo(target, options).then(() => {
+      if(this.lookAroundMode) {
+        let { position } = this.view.camera.clone();
+        this.imageGraphics.forEach(function(imgGraphic, index) {
+          this[index].visible = geometryEngine.distance(
+            webMercatorUtils.geographicToWebMercator(this[index].geometry),
+            position,
+            'meters'
+          ) < VIEW_RADIUS;
+        }, this.imageGraphics);
+      }
+    });
+  }
+
   exports.EsriWrapper.prototype.enterStreetView = function(key) {
     this.mly.show();
     this.lookAroundMode = true;
@@ -177,6 +200,11 @@ define([
 
     const twoDMap = document.getElementById('twoDMap');
     twoDMap.style.zIndex = 1;
+
+    // hide lines
+    this.imageTrajectories.forEach(function(part, index) {
+      this[index].visible = false;
+    }, this.imageTrajectories);
   }
 
   exports.EsriWrapper.prototype.exitStreetView = function() {
@@ -184,7 +212,7 @@ define([
     this.mly.hide();
     this.camera.position.z = FLY_TO_HIGHT;
 
-    this.view.goTo({
+    this.goToSync({
       position: this.camera.position,
       tilt: 45
     });
@@ -200,6 +228,13 @@ define([
     const twoDMap = document.getElementById('twoDMap');
     twoDMap.style.zIndex = -1;
 
+    this.imageTrajectories.forEach(function(part, index) {
+      this[index].visible = true;
+    }, this.imageTrajectories);
+
+    this.imageGraphics.forEach(function(imgGraphic, index) {
+      this[index].visible = true;
+    }, this.imageGraphics);
   }
 
   exports.EsriWrapper.prototype.createGlobalFn = function() {
@@ -302,6 +337,12 @@ define([
     externalRenderers.add(this.view, renderer);
   }
 
+  exports.EsriWrapper.prototype.mouseWheelHandler = function(event) {
+    if(this.lookAroundMode) {
+      event.stopPropagation();
+    }
+  }
+
   exports.EsriWrapper.prototype.dragHandler = function(event) {
     if(this.lookAroundMode) {
       // prevents panning with the mouse drag event
@@ -322,7 +363,7 @@ define([
           var newCenter = this.center.clone();
           newCenter.x -= dx * this.scale / 2000;
           console.log(newCenter.y);
-          this.view.goTo({
+          this.goToSync({
             center: newCenter,
             position: this.camera.position,
             scale: this.scale,
@@ -506,6 +547,7 @@ define([
               geometry,
               symbol,
               attributes });
+            this.imageGraphics.push(pointGraphic);
             this.graphicsLayer.add(pointGraphic);
         }
       });
@@ -526,7 +568,7 @@ define([
         geometry: polyline,
         symbol
       });
-
+      this.imageTrajectories.push(polylineGraphic);
       this.graphicsLayer.add(polylineGraphic);
     });
 
@@ -536,7 +578,6 @@ define([
     });
     await geojsonLayer.load();
     // map.add(geojsonLayer); do not add the geojson lay er TODO: this could be refactored
-
 
     this.mapExtent = geojsonLayer.fullExtent;
     resolve();

@@ -25,7 +25,7 @@ require([
           Point,
           null,
           esriWrapper.getElevationService(),
-          esriWrapper.getView(),
+          esriWrapper.goToSync.bind(esriWrapper),
         );
         esriWrapper.setMappilary(mly);
         // Resize the viewer when the window is resized.
