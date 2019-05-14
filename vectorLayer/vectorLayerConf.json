@@ -1,0 +1,56 @@
+{
+  "version": 8,
+  "sources": {
+    "mapillary-source": {
+      "tiles": [
+        "https://tiles3.mapillary.com/v0.1/{z}/{x}/{y}.mvt"
+      ],
+      "type": "vector",
+      "minzoom": 0
+    }
+  },
+  "layers": [
+    {
+      "id": "mapillary-dots",
+      "type": "circle",
+      "source": "mapillary-source",
+      "source-layer": "mapillary-images",
+      "interactive": true,
+      "minzoom": 14,
+      "paint": {
+        "circle-color": "#005F6A",
+        "circle-radius": 6
+      }
+    },
+    {
+      "id": "mapillary-lines",
+      "type": "line",
+      "source": "mapillary-source",
+      "source-layer": "mapillary-sequences",
+      "interactive": true,
+      "minzoom": 6,
+      "maxzoom": 14,
+      "layout": {
+        "line-join": "round",
+        "line-cap": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#39AF64",
+        "line-width": 2
+      }
+    },
+    {
+      "id": "mapillary-overview",
+      "type": "circle",
+      "source": "mapillary-source",
+      "source-layer": "mapillary-sequence-overview",
+      "maxzoom": 6,
+      "paint": {
+        "circle-radius": 4,
+        "circle-opacity": 0.6,
+        "circle-color": "#39AF64"
+      }
+    }
+  ]
+}
