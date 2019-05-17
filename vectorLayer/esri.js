@@ -1,5 +1,4 @@
 const ELEVATION_SERVICE_URL = "https://scene.arcgis.com/arcgis/rest/services/Zurich_DTM/ImageServer";
-const BUILDINGS_LAYER_ID = "1a87758a24724a879f5a7c17e739ab21";
 
 const SEQ_TO_LOAD = 1;
 const FOV = 60;
@@ -43,7 +42,7 @@ define([
   MapView,
   VectorTileLayer,
   ) {
-    exports.EsriWrapper = function () {
+    exports.EsriWrapper = function (buildingsLayerId) {
       // VARS
       // mapillary
       this.mly = null;
@@ -122,7 +121,7 @@ define([
       // load 3d buildings
       Layer.fromPortalItem({
         portalItem: {
-          id: BUILDINGS_LAYER_ID
+          id: buildingsLayerId
         }
       })
         .then((layer) => {
