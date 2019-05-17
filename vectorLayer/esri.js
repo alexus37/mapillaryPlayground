@@ -1,7 +1,7 @@
 const ELEVATION_SERVICE_URL = "https://scene.arcgis.com/arcgis/rest/services/Zurich_DTM/ImageServer";
 
 const SEQ_TO_LOAD = 1;
-const FOV = 60;
+const FOV = 100;
 
 // TODO: refactor this
 const INITIAL_LAT = 47.389;
@@ -54,6 +54,7 @@ define([
       this.isDragging = true;
       this.screenPoint = null;
       this.camera = null;
+      this.lastCameraPosition = null;
 
       this.curCamHeading = null;
       // what the user is currently hovering
@@ -73,7 +74,7 @@ define([
 
       // create elevation service, map and view
       this.elevationService = new ElevationLayer({ url: ELEVATION_SERVICE_URL });
-      this.map = new Map({ basemap: "gray", ground: "world-elevation" });
+      this.map = new Map({ basemap: "gray-vector", ground: "world-elevation" });
       this.map.ground.navigationConstraint = { type: "none" };
 
       this.graphicsLayer = new GraphicsLayer();
@@ -105,6 +106,7 @@ define([
         }
       });
       this.view.environment.lighting.cameraTrackingEnabled = false;
+      this.camera = this.view.camera.clone();
       this.goToSync.bind(this);
 
       this.view.when(this.initCallback.bind(this));
@@ -146,8 +148,7 @@ define([
             }
           };
           this.map.add(layer);
-          layer.when(function() {
-            console.log(layer.fullExtent.center);
+          layer.when(function () {
             this.goToSync({
               heading: 0,
               tilt: 15, // looking from a bird's eye view
@@ -177,8 +178,6 @@ define([
         const imgJson = await response.json();
 
         if (imgJson && imgJson.features && imgJson.features.length > 0) {
-          // TODO: save the last camera position
-
           const { key } = imgJson.features[0].properties;
           this.enterStreetView(key);
         }
@@ -186,15 +185,11 @@ define([
     }
 
     exports.EsriWrapper.prototype.goToSync = function (target, options) {
-      this.view.goTo(target, options).then(() => {
-        if (this.lookAroundMode) {
-          // TODO: can be removed in the feature
-          let { position } = this.view.camera.clone();
-        }
-      });
+      this.view.goTo(target, options).then(() => { });
     }
 
     exports.EsriWrapper.prototype.enterStreetView = function (key) {
+      this.lastCameraPosition = this.view.camera.clone();
       this.mly.show();
       this.lookAroundMode = true;
       this.mly.moveToKey(key);
@@ -210,14 +205,9 @@ define([
     }
 
     exports.EsriWrapper.prototype.exitStreetView = function () {
-      this.camera = this.view.camera.clone();
       this.mly.hide();
-      this.camera.position.z = FLY_TO_HIGHT;
 
-      this.goToSync({
-        position: this.camera.position,
-        tilt: 45
-      });
+      this.goToSync(this.lastCameraPosition);
 
       this.lookAroundMode = false;
       const elem = document.getElementById('dragImg');
@@ -288,7 +278,14 @@ define([
         this.exitStreetView();
       }.bind(this);
 
-      document.addEventListener("mouseup", function (e) {
+      window.changeFOV = function(event) {
+        console.log(event.target.value);
+        const camera = this.view.camera.clone();
+        camera.fov = event.target.value;
+        this.view.camera = camera;
+      }.bind(this)
+
+      const exitDrag = function (e) {
         if (this.drag) {
           this.drag = false;
           var ghost = document.getElementById("dragContainer");
@@ -297,11 +294,15 @@ define([
             clearInterval(this.dragAnimationId);
           }
           console.log('dragend global');
-          this.nodeHitFn(e);
+
+          if(e) {
+            this.nodeHitFn(e);
+          }
           // hide the coverage layer
           this.coverageLayer.visible = false;
         }
-      }.bind(this), false);
+      }.bind(this);
+      document.addEventListener("mouseup", exitDrag, false);
 
       window.dragDiv = function (e) {
         if (!this.drag) { return };
@@ -312,6 +313,21 @@ define([
         targ.style.left = this.coordX + e.clientX - this.offsetX + 'px';
         targ.style.top = this.coordY + e.clientY - this.offsetY + 'px';
         return false;
+      }.bind(this);
+
+
+      document.onkeydown = function (evt) {
+        evt = evt || window.event;
+        var isEscape = false;
+        if ("key" in evt) {
+          isEscape = (evt.key === "Escape" || evt.key === "Esc");
+        } else {
+          isEscape = (evt.keyCode === 27);
+        }
+        if (isEscape) {
+          if(this.drag) return exitDrag();
+          if(this.lookAroundMode) return this.exitStreetView();
+        }
       }.bind(this);
     }
 
@@ -375,6 +391,16 @@ define([
       dropContainer.appendChild(elem);
       this.view.ui.add(dropContainer, "bottom-right");
 
+      var fovInput = document.createElement("input");
+      fovInput.setAttribute("id", "fovInput");
+      fovInput.setAttribute("type", "number");
+      fovInput.setAttribute("min", "0");
+      fovInput.setAttribute("max", "180");
+      fovInput.setAttribute("onchange", "changeFOV(event)");
+      fovInput.value = this.view.camera.fov;
+
+      this.view.ui.add(fovInput, "top-right");
+
       const map = new Map({ basemap: "gray-vector" });
 
       const geometry = {
@@ -407,8 +433,6 @@ define([
     }
 
     exports.EsriWrapper.prototype.initCallback = function () {
-      console.log('Map loaded');
-      console.log(this);
       this.createGlobalFn();
 
       // TODO: refactor => index.js add setter

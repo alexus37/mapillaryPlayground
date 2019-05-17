@@ -3,10 +3,11 @@
   "sources": {
     "mapillary-source": {
       "tiles": [
-        "https://tiles3.mapillary.com/v0.1/{z}/{x}/{y}.mvt"
+        "https://a.mapillary.com/v3/tile_splitter/{z}/{x}/{y}.mvt?tile_url=https://tiles3.mapillary.com/v0.1/[[z]]/[[x]]/[[y]].mvt&split_at_zoom=14"
       ],
       "type": "vector",
-      "minzoom": 0
+      "minzoom": 0,
+      "maxzoom": 18
     }
   },
   "layers": [
@@ -36,7 +37,7 @@
         "visibility": "visible"
       },
       "paint": {
-        "line-color": "#39AF64",
+        "line-color": "#00AF64",
         "line-width": 2
       }
     },
